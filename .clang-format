@@ -1,0 +1,42 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+ColumnLimit: 100
+IndentWidth: 4
+ContinuationIndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBraces: Attach
+BreakConstructorInitializers: BeforeColon
+PackConstructorInitializers: NextLine
+SpaceAfterTemplateKeyword: false
+FixNamespaceComments: true
+NamespaceIndentation: None
+
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Own headers first (wumpo/... include paths).
+  - Regex: '^"wumpo/'
+    Priority: 1
+  - Regex: '^"'
+    Priority: 2
+  # Third-party angled headers.
+  - Regex: '^<(SDL3|doctest)'
+    Priority: 3
+  # Standard library.
+  - Regex: '^<[a-z_]+>$'
+    Priority: 4
+  - Regex: '.*'
+    Priority: 5

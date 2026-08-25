@@ -1,0 +1,14 @@
+# Normalize line endings: LF in the repository, native in the working tree.
+* text=auto eol=lf
+
+# Golden baselines are text and must diff readably on GitHub.
+*.pbm text eol=lf
+
+# Windows-only scripts keep CRLF so they run from Explorer.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets
+*.png binary
+*.wav binary
+*.ttf binary

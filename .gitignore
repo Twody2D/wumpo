@@ -1,0 +1,44 @@
+# Build output
+build/
+out/
+install/
+.cache/
+compile_commands.json
+
+# CMake user-specific
+CMakeUserPresets.json
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.sdf
+*.opensdf
+
+# Compiler / linker artifacts
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.dll
+*.a
+*.so
+*.dylib
+
+# Secrets — never commit real values, see SECURITY.md
+.env
+.env.local
+*.pem
+*.key
+
+# Runtime artifacts produced by the emulator
+*.sav
+screenshots/
+replays/
+
+# Golden test failures (baselines in tests/golden/ ARE tracked)
+*.actual.pbm
+*.diff.txt
