@@ -4,6 +4,7 @@
 #include <doctest.h>
 
 #include <array>
+#include <optional>
 #include <set>
 #include <string_view>
 
@@ -36,9 +37,9 @@ TEST_SUITE("input") {
         for (const Button button : input::kAllButtonList) {
             const std::string_view text = input::name(button);
             CHECK_FALSE(text.empty());
-            const auto parsed = input::parseButton(text);
-            REQUIRE(parsed.has_value());
-            CHECK(*parsed == button);
+            // Compared as optionals rather than dereferenced: a failure then
+            // reports "nothing" instead of crashing the test binary.
+            CHECK(input::parseButton(text) == std::optional<Button>{button});
         }
     }
 

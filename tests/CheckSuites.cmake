@@ -4,6 +4,9 @@
 #
 # Invoked as: cmake -DTESTS_EXE=... -DEXPECTED_SUITES=... -P CheckSuites.cmake
 
+# Sent as a comma-separated string so the shell cannot split it; restore the list.
+string(REPLACE "," ";" EXPECTED_SUITES "${EXPECTED_SUITES}")
+
 execute_process(
     COMMAND "${TESTS_EXE}" --list-test-suites
     OUTPUT_VARIABLE listing

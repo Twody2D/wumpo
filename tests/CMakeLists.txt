@@ -35,7 +35,12 @@ endforeach()
 
 # Guards against a suite existing in the binary but not in the list above, which
 # would mean tests that compile in CI and never run.
+#
+# Joined with commas, not left as a CMake list: a semicolon-separated -D value
+# is split into separate command line arguments by the shell, which passed on
+# Windows and failed on Linux.
+string(JOIN "," wumpo_expected_suites ${WUMPO_TEST_SUITES})
 add_test(NAME suite-registration COMMAND "${CMAKE_COMMAND}"
     "-DTESTS_EXE=$<TARGET_FILE:wumpo_tests>"
-    "-DEXPECTED_SUITES=${WUMPO_TEST_SUITES}"
+    "-DEXPECTED_SUITES=${wumpo_expected_suites}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/CheckSuites.cmake")
