@@ -1,9 +1,9 @@
 #include "game/demo_scene.hpp"
 
+#include "core/fixed_string.hpp"
 #include "renderer/font.hpp"
 
 #include <algorithm>
-#include <string>
 
 namespace wumpo::game {
 namespace {
@@ -105,22 +105,29 @@ DemoScene::Sound DemoScene::tick(const input::InputState& input) {
 void DemoScene::render(renderer::Framebuffer& frame) const {
     frame.clear();
 
+    // Text is built on the stack throughout: drawing happens every frame, and
+    // std::to_string would allocate every one of them.
     if (phase_ == Phase::Over) {
-        // 16 characters fit across the screen; centre both lines by hand rather
-        // than guessing at a layout system that does not exist yet.
-        const std::string score_text = "SCORE " + std::to_string(score_);
-        const int over_x = (config::kScreenWidth - renderer::font::textWidth("TIME UP")) / 2;
-        const int score_x = (config::kScreenWidth - renderer::font::textWidth(score_text)) / 2;
-        renderer::drawText(frame, over_x, 8, "TIME UP");
-        renderer::drawText(frame, score_x, 16, score_text);
-        renderer::drawText(frame, (config::kScreenWidth - renderer::font::textWidth("A=AGAIN")) / 2,
-                           24, "A=AGAIN");
+        // 16 characters fit across the screen; centre each line by hand rather
+        // than inventing a layout system nothing else needs yet.
+        core::ScreenText score_text("SCORE ");
+        score_text.append(score_);
+
+        const auto centred = [](std::string_view text) {
+            return (config::kScreenWidth - renderer::font::textWidth(text)) / 2;
+        };
+
+        renderer::drawText(frame, centred("TIME UP"), 8, "TIME UP");
+        renderer::drawText(frame, centred(score_text.view()), 16, score_text.view());
+        renderer::drawText(frame, centred("A=AGAIN"), 24, "A=AGAIN");
         return;
     }
 
     // Score at the left of the status strip, drawn from the very top row so its
     // bottom row clears the rule below.
-    renderer::drawText(frame, 1, kStatusTop, std::to_string(score_));
+    core::ScreenText score_text;
+    score_text.append(score_);
+    renderer::drawText(frame, 1, kStatusTop, score_text.view());
 
     // Remaining time as a bar that shortens from the left: readable at a glance,
     // which a number is not on a screen this size.
