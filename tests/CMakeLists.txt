@@ -14,6 +14,7 @@ add_executable(wumpo_tests
     unit/test_input.cpp
     unit/test_loop.cpp
     unit/test_platform.cpp
+    unit/test_rng.cpp
 )
 
 target_link_libraries(wumpo_tests
