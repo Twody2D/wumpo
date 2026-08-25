@@ -32,6 +32,11 @@ if(WUMPO_BUILD_EMULATOR)
     add_subdirectory(emulator)
 endif()
 
+if(WUMPO_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 message(STATUS "wumpo ${PROJECT_VERSION}"
     " | emulator: ${WUMPO_BUILD_EMULATOR}"
     " | tests: ${WUMPO_BUILD_TESTS}"
