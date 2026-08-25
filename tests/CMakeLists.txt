@@ -15,7 +15,10 @@ add_executable(wumpo_tests
     unit/test_loop.cpp
     unit/test_platform.cpp
     unit/test_rng.cpp
+    unit/test_save_data.cpp
+    unit/test_allocations.cpp
     game/test_demo_scene.cpp
+    integration/test_replay.cpp
 )
 
 target_link_libraries(wumpo_tests

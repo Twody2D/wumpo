@@ -9,11 +9,13 @@ configure_file(
     @ONLY)
 
 add_library(wumpo_core STATIC
+    core/replay.cpp
     core/version.cpp
     renderer/framebuffer.cpp
     renderer/font.cpp
     renderer/pbm.cpp
     game/demo_scene.cpp
+    storage/save_data.cpp
 )
 
 add_library(wumpo::core ALIAS wumpo_core)
