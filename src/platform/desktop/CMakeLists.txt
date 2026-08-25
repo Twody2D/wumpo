@@ -3,7 +3,7 @@
 include(WumpoDependencies)
 
 add_library(wumpo_platform_desktop STATIC
-    desktop_placeholder.cpp
+    desktop_platform.cpp
 )
 
 add_library(wumpo::platform_desktop ALIAS wumpo_platform_desktop)
