@@ -13,6 +13,7 @@ add_executable(wumpo_tests
     unit/test_font.cpp
     unit/test_input.cpp
     unit/test_loop.cpp
+    unit/test_platform.cpp
 )
 
 target_link_libraries(wumpo_tests
@@ -24,7 +25,8 @@ set_target_properties(wumpo_tests PROPERTIES FOLDER "wumpo/tests")
 
 # Each suite becomes its own CTest entry, so `ctest -R golden` and friends work
 # and a failure names the area rather than "the tests".
-set(WUMPO_TEST_SUITES core renderer input audio storage game determinism golden replay alloc)
+set(WUMPO_TEST_SUITES core renderer input audio storage game platform determinism golden replay
+                      alloc)
 
 foreach(suite IN LISTS WUMPO_TEST_SUITES)
     add_test(NAME ${suite} COMMAND wumpo_tests --test-suite=${suite})
