@@ -10,6 +10,7 @@ configure_file(
 
 add_library(wumpo_core STATIC
     core/version.cpp
+    renderer/framebuffer.cpp
 )
 
 add_library(wumpo::core ALIAS wumpo_core)

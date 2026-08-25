@@ -9,6 +9,7 @@ target_include_directories(wumpo_doctest SYSTEM INTERFACE "${CMAKE_CURRENT_SOURC
 add_executable(wumpo_tests
     test_main.cpp
     unit/test_version.cpp
+    unit/test_framebuffer.cpp
 )
 
 target_link_libraries(wumpo_tests
