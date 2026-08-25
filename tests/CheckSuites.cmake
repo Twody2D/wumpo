@@ -36,7 +36,10 @@ endforeach()
 
 set(unregistered "")
 foreach(suite IN LISTS found)
-    if(NOT suite IN_LIST EXPECTED_SUITES)
+    # list(FIND) rather than IN_LIST: the latter proved fragile across CMake
+    # versions here, and a broken guard is worse than no guard.
+    list(FIND EXPECTED_SUITES "${suite}" suite_index)
+    if(suite_index EQUAL -1)
         list(APPEND unregistered "${suite}")
     endif()
 endforeach()
