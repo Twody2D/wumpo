@@ -11,4 +11,4 @@ int compiledSdlVersion() noexcept {
     return SDL_VERSION;
 }
 
-}  // namespace wumpo::platform::desktop
+} // namespace wumpo::platform::desktop

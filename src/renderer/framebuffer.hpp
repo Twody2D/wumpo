@@ -19,7 +19,8 @@ struct Sprite {
     [[nodiscard]] constexpr int bytesPerRow() const noexcept { return (width + 7) / 8; }
     [[nodiscard]] constexpr bool valid() const noexcept {
         return width > 0 && height > 0 &&
-               bits.size() >= static_cast<std::size_t>(bytesPerRow() * height);
+               bits.size() >=
+                   static_cast<std::size_t>(bytesPerRow()) * static_cast<std::size_t>(height);
     }
 };
 
@@ -73,4 +74,4 @@ private:
     std::array<std::uint8_t, kByteCount> pixels_{};
 };
 
-}  // namespace wumpo::renderer
+} // namespace wumpo::renderer

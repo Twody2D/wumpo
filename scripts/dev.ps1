@@ -59,11 +59,31 @@ function Enter-MsvcEnvironment {
     Set-Location $repoRoot
 }
 
+function Get-Tool {
+    # winget adds its installs to the machine PATH, which existing shells do not
+    # pick up until they are restarted. Falling back to the default install
+    # locations means a fresh install works in the shell that ran it.
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    $found = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($found) { return $found.Source }
+
+    $fallbacks = @(
+        (Join-Path $env:ProgramFiles "LLVM\bin\$Name.exe"),
+        (Join-Path $env:ProgramFiles "CMake\bin\$Name.exe")
+    )
+    foreach ($candidate in $fallbacks) {
+        if (Test-Path $candidate) { return $candidate }
+    }
+
+    throw "$Name not found. See docs/development/toolchain.md, then restart the shell."
+}
+
 function Get-SourceFiles {
     Get-ChildItem -Path (Join-Path $repoRoot 'src'), (Join-Path $repoRoot 'emulator'),
                         (Join-Path $repoRoot 'tools'), (Join-Path $repoRoot 'tests') `
                   -Include '*.cpp', '*.hpp' -Recurse -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch '\third_party\' }
+        Where-Object { $_.FullName -notmatch 'third_party' }
 }
 
 function Invoke-Configure {
@@ -102,7 +122,8 @@ switch ($Command) {
     'format' {
         $files = Get-SourceFiles
         if (-not $files) { Write-Output 'No sources to format.'; break }
-        & clang-format -i --style=file @($files.FullName)
+        $clangFormat = Get-Tool clang-format
+        & $clangFormat -i --style=file @($files.FullName)
         if ($LASTEXITCODE -ne 0) { Write-Output "clang-format failed (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
         Write-Output "Formatted $($files.Count) file(s)."
     }
@@ -113,7 +134,8 @@ switch ($Command) {
         if (-not (Test-Path $db)) { Invoke-Configure }
         $files = Get-SourceFiles | Where-Object { $_.Extension -eq '.cpp' }
         if (-not $files) { Write-Output 'No sources to lint.'; break }
-        & clang-tidy -p $buildDir --warnings-as-errors='*' @($files.FullName)
+        $clangTidy = Get-Tool clang-tidy
+        & $clangTidy -p $buildDir --warnings-as-errors='*' @($files.FullName)
         if ($LASTEXITCODE -ne 0) { Write-Output "clang-tidy reported problems (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
         Write-Output "Linted $($files.Count) file(s)."
     }

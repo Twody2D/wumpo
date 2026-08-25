@@ -14,7 +14,7 @@ constexpr std::size_t byteIndex(int x, int y) noexcept {
     return static_cast<std::size_t>(y * Framebuffer::kBytesPerRow + (x / 8));
 }
 
-}  // namespace
+} // namespace
 
 void Framebuffer::clear(bool on) noexcept {
     pixels_.fill(on ? std::uint8_t{0xFF} : std::uint8_t{0x00});
@@ -135,4 +135,4 @@ void Framebuffer::invert() noexcept {
     }
 }
 
-}  // namespace wumpo::renderer
+} // namespace wumpo::renderer

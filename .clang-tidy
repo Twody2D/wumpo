@@ -17,7 +17,10 @@ Checks: >
   -readability-magic-numbers,
   -readability-function-cognitive-complexity,
   -misc-non-private-member-variables-in-classes,
-  -misc-include-cleaner
+  -misc-include-cleaner,
+  -readability-math-missing-parentheses,
+  -bugprone-easily-swappable-parameters,
+  -clang-diagnostic-unused-command-line-argument
 
 # Only our own sources; vendored doctest and fetched SDL are out of scope.
 HeaderFilterRegex: '.*(src|emulator|tools)[/\].*\.(hpp|h)$'

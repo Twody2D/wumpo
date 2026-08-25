@@ -34,9 +34,7 @@ jobs:
         env:
           CC: clang
           CXX: clang++
-        run: >
-          cmake --preset ci-core
-          -DWUMPO_SANITIZE="address;undefined"
+        run: cmake --preset ci-core -DWUMPO_SANITIZE="address;undefined"
 
       - name: Build
         run: cmake --build --preset ci-core
@@ -45,6 +43,8 @@ jobs:
         run: ctest --preset ci-core
 
   # Full build including the SDL3 backend, on the platform development happens on.
+  # Driven through scripts/dev.ps1 so CI exercises the same entry point a
+  # developer uses, and a break in the script is caught here rather than locally.
   windows:
     name: Full (Windows, MSVC)
     runs-on: windows-latest
@@ -65,30 +65,17 @@ jobs:
           path: build/debug/_deps
           key: sdl3-${{ runner.os }}-${{ steps.sdl.outputs.tag }}
 
-      # Entering the MSVC environment by hand rather than through a third-party
-      # action: this is five lines we can read, instead of a dependency that
-      # runs with full access to the job.
-      - name: Set up MSVC
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installerswhere.exe"
-          $vsPath = & $vswhere -latest -products * `
-            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          $vcvars = Join-Path $vsPath 'VC\Auxiliary\Buildcvars64.bat'
-          cmd /c "`"$vcvars`" >nul && set" | ForEach-Object {
-            if ($_ -match '^([^=]+)=(.*)$') {
-              "$($matches[1])=$($matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-            }
-          }
-
       - name: Configure
-        run: cmake --preset debug -DWUMPO_WERROR=ON
+        shell: pwsh
+        run: .\scripts\dev.ps1 configure -Preset debug -DWUMPO_WERROR=ON
 
       - name: Build
-        run: cmake --build --preset debug
+        shell: pwsh
+        run: .\scripts\dev.ps1 build -Preset debug
 
       - name: Test
-        run: ctest --preset debug
+        shell: pwsh
+        run: .\scripts\dev.ps1 test -Preset debug
 
   quality:
     name: Format and lint

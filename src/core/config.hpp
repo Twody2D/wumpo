@@ -48,4 +48,4 @@ inline constexpr int kToneQueueCapacity = 8;
 /// Persistent storage: one fixed block, sized like a small EEPROM page.
 inline constexpr int kStorageBytes = 256;
 
-}  // namespace wumpo::config
+} // namespace wumpo::config

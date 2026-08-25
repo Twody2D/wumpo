@@ -18,10 +18,10 @@ namespace font {
 
 inline constexpr int kGlyphWidth = 3;
 inline constexpr int kGlyphHeight = 5;
-inline constexpr int kAdvance = kGlyphWidth + 1;  // one pixel of letter spacing
+inline constexpr int kAdvance = kGlyphWidth + 1; // one pixel of letter spacing
 
-inline constexpr char kFirstChar = ' ';  // 32
-inline constexpr char kLastChar = 'Z';   // 90
+inline constexpr char kFirstChar = ' '; // 32
+inline constexpr char kLastChar = 'Z';  // 90
 inline constexpr int kGlyphCount = kLastChar - kFirstChar + 1;
 
 /// Width in pixels of `text` as drawn, excluding the trailing spacing column.
@@ -31,10 +31,10 @@ inline constexpr int kGlyphCount = kLastChar - kFirstChar + 1;
 /// covered range.
 [[nodiscard]] std::uint8_t glyphColumn(char character, int column) noexcept;
 
-}  // namespace font
+} // namespace font
 
 /// Draws `text` with its top-left corner at (x, y). Clips like every other
 /// primitive; unset pixels are left alone, so text composites over background.
 void drawText(Framebuffer& fb, int x, int y, std::string_view text, bool on = true) noexcept;
 
-}  // namespace wumpo::renderer
+} // namespace wumpo::renderer

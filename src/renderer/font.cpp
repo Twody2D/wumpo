@@ -77,10 +77,11 @@ constexpr std::string_view kGlyphArt =
 // clang-format on
 
 static_assert(kGlyphArt.size() ==
-                  static_cast<std::size_t>(kGlyphCount * kGlyphWidth * kGlyphHeight),
+                  static_cast<std::size_t>(kGlyphCount) * kGlyphWidth * kGlyphHeight,
               "glyph art must cover exactly ASCII 32..90");
 
-using GlyphTable = std::array<std::uint8_t, static_cast<std::size_t>(kGlyphCount * kGlyphWidth)>;
+constexpr std::size_t kGlyphTableSize = static_cast<std::size_t>(kGlyphCount) * kGlyphWidth;
+using GlyphTable = std::array<std::uint8_t, kGlyphTableSize>;
 
 /// Packs the art into columns at compile time: one byte per column, bit 0 is the
 /// top row. Column-major costs three bytes per glyph instead of five, and the
@@ -91,9 +92,11 @@ constexpr GlyphTable buildGlyphs() noexcept {
         for (int row = 0; row < kGlyphHeight; ++row) {
             for (int column = 0; column < kGlyphWidth; ++column) {
                 const auto art_index =
-                    static_cast<std::size_t>((glyph * kGlyphHeight + row) * kGlyphWidth + column);
+                    static_cast<std::size_t>(glyph * kGlyphHeight + row) * kGlyphWidth +
+                    static_cast<std::size_t>(column);
                 if (kGlyphArt[art_index] == '#') {
-                    const auto out_index = static_cast<std::size_t>(glyph * kGlyphWidth + column);
+                    const auto out_index = static_cast<std::size_t>(glyph) * kGlyphWidth +
+                                           static_cast<std::size_t>(column);
                     table[out_index] = static_cast<std::uint8_t>(table[out_index] | (1U << row));
                 }
             }
@@ -109,7 +112,7 @@ constexpr char toUpper(char character) noexcept {
                                                   : character;
 }
 
-}  // namespace
+} // namespace
 
 std::uint8_t glyphColumn(char character, int column) noexcept {
     if (column < 0 || column >= kGlyphWidth) {
@@ -119,7 +122,8 @@ std::uint8_t glyphColumn(char character, int column) noexcept {
     if (upper < kFirstChar || upper > kLastChar) {
         return 0;
     }
-    const auto index = static_cast<std::size_t>((upper - kFirstChar) * kGlyphWidth + column);
+    const auto index = static_cast<std::size_t>(upper - kFirstChar) * kGlyphWidth +
+                       static_cast<std::size_t>(column);
     return kGlyphs[index];
 }
 
@@ -130,7 +134,7 @@ int textWidth(std::string_view text) noexcept {
     return static_cast<int>(text.size()) * kAdvance - 1;
 }
 
-}  // namespace font
+} // namespace font
 
 void drawText(Framebuffer& fb, int x, int y, std::string_view text, bool on) noexcept {
     int pen_x = x;
@@ -147,4 +151,4 @@ void drawText(Framebuffer& fb, int x, int y, std::string_view text, bool on) noe
     }
 }
 
-}  // namespace wumpo::renderer
+} // namespace wumpo::renderer

@@ -5,11 +5,11 @@
 namespace wumpo::core {
 
 Version version() noexcept {
-    return Version{kVersionMajor, kVersionMinor, kVersionPatch};
+    return Version{.major = kVersionMajor, .minor = kVersionMinor, .patch = kVersionPatch};
 }
 
 const char* versionString() noexcept {
     return kVersionString;
 }
 
-}  // namespace wumpo::core
+} // namespace wumpo::core

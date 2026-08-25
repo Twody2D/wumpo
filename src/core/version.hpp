@@ -15,4 +15,4 @@ struct Version {
 /// Formatted as "major.minor.patch".
 [[nodiscard]] const char* versionString() noexcept;
 
-}  // namespace wumpo::core
+} // namespace wumpo::core
