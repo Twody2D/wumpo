@@ -1,4 +1,4 @@
-# wumpo_core — everything that could one day run on the device.
+# wumpo_core - everything that could one day run on the device.
 #
 # This target must never link or include SDL, Windows or any OS-specific header.
 # CI builds it with WUMPO_BUILD_EMULATOR=OFF to prove that stays true.
@@ -13,6 +13,7 @@ add_library(wumpo_core STATIC
     renderer/framebuffer.cpp
     renderer/font.cpp
     renderer/pbm.cpp
+    game/demo_scene.cpp
 )
 
 add_library(wumpo::core ALIAS wumpo_core)

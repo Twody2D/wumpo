@@ -34,7 +34,6 @@ public:
     constexpr explicit Pcg32(std::uint64_t seed, std::uint64_t stream = kDefaultStream) noexcept
         : increment_((stream << 1U) | 1U) {
         // The reference seeding routine: step, add the seed, step again.
-        state_ = 0;
         step();
         state_ += seed;
         step();
@@ -61,7 +60,7 @@ public:
         std::uint64_t product = static_cast<std::uint64_t>(next()) * bound;
         auto low = static_cast<std::uint32_t>(product);
         if (low < bound) {
-            const std::uint32_t threshold = (~bound + 1U) % bound;  // (2^32 - bound) % bound
+            const std::uint32_t threshold = (~bound + 1U) % bound; // (2^32 - bound) % bound
             while (low < threshold) {
                 product = static_cast<std::uint64_t>(next()) * bound;
                 low = static_cast<std::uint32_t>(product);
@@ -89,7 +88,7 @@ public:
 
     constexpr void setState(std::uint64_t state, std::uint64_t increment) noexcept {
         state_ = state;
-        increment_ = increment | 1U;  // an even increment would collapse the period
+        increment_ = increment | 1U; // an even increment would collapse the period
     }
 
     [[nodiscard]] constexpr bool operator==(const Pcg32&) const noexcept = default;
@@ -101,4 +100,4 @@ private:
     std::uint64_t increment_ = kDefaultStream;
 };
 
-}  // namespace wumpo::core
+} // namespace wumpo::core
