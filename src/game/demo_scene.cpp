@@ -13,6 +13,16 @@ using input::Button;
 constexpr int kPlayfieldTop = 7; // leaves a strip at the top for the score
 constexpr int kMoveEveryTicks = 4;
 
+/// Layout of the status strip. The score sits at the left; the timer bar starts
+/// past it, because a full bar drawn from the screen edge covers the score
+/// exactly when the run begins - which is when a player most needs to see it.
+constexpr int kStatusTop = 0;
+constexpr int kBarLeft = 12;
+constexpr int kBarWidth = config::kScreenWidth - kBarLeft;
+constexpr int kBarTop = 1;
+constexpr int kBarHeight = 3;
+constexpr int kRuleRow = kPlayfieldTop - 2;
+
 /// A short blip on a score, a lower one when the run ends. Frequencies picked to
 /// be audible on a piezo, which has nothing below a few hundred hertz.
 constexpr DemoScene::Sound kScoreSound{.frequency_hz = 1'320, .duration_ms = 40};
@@ -108,14 +118,16 @@ void DemoScene::render(renderer::Framebuffer& frame) const {
         return;
     }
 
-    // Score strip along the top, separated from the playfield by a rule.
-    renderer::drawText(frame, 1, 1, std::to_string(score_));
+    // Score at the left of the status strip, drawn from the very top row so its
+    // bottom row clears the rule below.
+    renderer::drawText(frame, 1, kStatusTop, std::to_string(score_));
 
-    // Remaining time as a bar that shortens: readable at a glance, which a
-    // number is not on a screen this size.
-    const int bar_width = config::kScreenWidth * ticks_left_ / kRunTicks;
-    frame.fillRect(config::kScreenWidth - bar_width, 1, bar_width, 3, true);
-    frame.drawLine(0, kPlayfieldTop - 2, config::kScreenWidth - 1, kPlayfieldTop - 2, true);
+    // Remaining time as a bar that shortens from the left: readable at a glance,
+    // which a number is not on a screen this size.
+    const int bar_width = kBarWidth * ticks_left_ / kRunTicks;
+    frame.fillRect(config::kScreenWidth - bar_width, kBarTop, bar_width, kBarHeight, true);
+
+    frame.drawLine(0, kRuleRow, config::kScreenWidth - 1, kRuleRow, true);
 
     // The target is hollow, the player solid, so they stay distinguishable when
     // they overlap at three pixels across.

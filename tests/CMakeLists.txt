@@ -15,12 +15,19 @@ add_executable(wumpo_tests
     unit/test_loop.cpp
     unit/test_platform.cpp
     unit/test_rng.cpp
+    game/test_demo_scene.cpp
 )
 
 target_link_libraries(wumpo_tests
     PRIVATE wumpo::core wumpo_doctest wumpo::warnings)
 
 target_include_directories(wumpo_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# Golden baselines are read from the source tree, not copied into the build:
+# a failing test then writes its .actual.pbm right next to the baseline it
+# disagrees with, where reviewing and accepting it is one rename.
+target_compile_definitions(wumpo_tests PRIVATE
+    WUMPO_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
 
 set_target_properties(wumpo_tests PROPERTIES FOLDER "wumpo/tests")
 
