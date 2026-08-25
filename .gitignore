@@ -1,11 +1,11 @@
-# Build output
+# Артефакты сборки
 build/
 out/
 install/
 .cache/
 compile_commands.json
 
-# CMake user-specific
+# Пользовательские настройки CMake
 CMakeUserPresets.json
 
 # Visual Studio / VS Code
@@ -16,7 +16,7 @@ CMakeUserPresets.json
 *.sdf
 *.opensdf
 
-# Compiler / linker artifacts
+# Артефакты компилятора и линковщика
 *.obj
 *.o
 *.exe
@@ -28,17 +28,17 @@ CMakeUserPresets.json
 *.so
 *.dylib
 
-# Secrets — never commit real values, see SECURITY.md
+# Секреты — реальные значения не коммитить никогда, см. SECURITY.md
 .env
 .env.local
 *.pem
 *.key
 
-# Runtime artifacts produced by the emulator
+# Что создаёт эмулятор во время работы
 *.sav
 screenshots/
 replays/
 
-# Golden test failures (baselines in tests/golden/ ARE tracked)
+# Результаты упавших golden-тестов (сами эталоны в tests/golden/ отслеживаются)
 *.actual.pbm
 *.diff.txt
