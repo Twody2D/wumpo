@@ -152,7 +152,7 @@ bool writeFrame(const Framebuffer& frame, const std::filesystem::path& path) {
     if (path.has_parent_path()) {
         std::filesystem::create_directories(path.parent_path(), code);
     }
-    std::ofstream file(path, std::ios::trunc);
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
     if (!file) {
         std::fprintf(stderr, "wumpo: could not write %s\n", path.string().c_str());
         return false;

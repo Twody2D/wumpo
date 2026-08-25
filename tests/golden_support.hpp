@@ -27,7 +27,9 @@ namespace wumpo::testing {
 }
 
 [[nodiscard]] inline bool readFile(const std::filesystem::path& path, std::string& out) {
-    std::ifstream file(path);
+    // Binary, so a baseline written on Windows and one written on Linux are
+    // byte-identical and the zero-tolerance comparison stays honest.
+    std::ifstream file(path, std::ios::binary);
     if (!file) {
         return false;
     }
@@ -49,7 +51,7 @@ inline void checkGolden(const std::string& name, const renderer::Framebuffer& fr
 
     std::string baseline_text;
     if (!readFile(baseline_path, baseline_text)) {
-        std::ofstream(actual_path) << renderer::toPbm(frame);
+        std::ofstream(actual_path, std::ios::binary) << renderer::toPbm(frame);
         FAIL("no golden baseline at " << baseline_path.string() << "\nrendered frame written to "
                                       << actual_path.string()
                                       << "\nreview it, then rename it to accept it as the baseline"
@@ -72,7 +74,7 @@ inline void checkGolden(const std::string& name, const renderer::Framebuffer& fr
         return;
     }
 
-    std::ofstream(actual_path) << renderer::toPbm(frame);
+    std::ofstream(actual_path, std::ios::binary) << renderer::toPbm(frame);
     FAIL("frame does not match " << baseline_path.string() << "\nactual written to "
                                  << actual_path.string()
                                  << "\n\n'+' lit only in actual, '-' lit only in baseline:\n\n"
