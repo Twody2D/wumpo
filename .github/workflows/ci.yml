@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Keep in step with docs/development/toolchain.md.
+  LLVM_VERSION: "22"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -83,10 +87,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      # Pinned to the same major version developers install locally. clang-format
+      # output differs between releases, so an unpinned version turns a green
+      # local check into a red CI run over formatting nobody chose.
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build clang clang-format clang-tidy
+          sudo apt-get install -y ninja-build lsb-release wget software-properties-common gnupg
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh ${{ env.LLVM_VERSION }}
+          sudo apt-get install -y clang-format-${{ env.LLVM_VERSION }} clang-tidy-${{ env.LLVM_VERSION }}
+          sudo update-alternatives --install /usr/bin/clang-format clang-format             /usr/bin/clang-format-${{ env.LLVM_VERSION }} 100
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy             /usr/bin/clang-tidy-${{ env.LLVM_VERSION }} 100
+          clang-format --version
 
       - name: Check formatting
         run: |
