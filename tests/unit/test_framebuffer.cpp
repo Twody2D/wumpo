@@ -146,7 +146,7 @@ TEST_SUITE("renderer") {
     TEST_CASE("sprites composite over the background instead of overwriting it") {
         // A 3x2 sprite: row 0 = 101, row 1 = 010, padded to one byte per row.
         constexpr std::array<std::uint8_t, 2> kBits{0b1010'0000, 0b0100'0000};
-        const Sprite sprite{kBits, 3, 2};
+        const Sprite sprite{.bits = kBits, .width = 3, .height = 2};
         REQUIRE(sprite.valid());
 
         Framebuffer fb;
@@ -163,7 +163,7 @@ TEST_SUITE("renderer") {
 
     TEST_CASE("sprites clip at every edge") {
         constexpr std::array<std::uint8_t, 2> kBits{0xFF, 0xFF};
-        const Sprite sprite{kBits, 8, 2};
+        const Sprite sprite{.bits = kBits, .width = 8, .height = 2};
 
         Framebuffer fb;
         fb.drawSprite(-4, -1, sprite, true);
@@ -176,7 +176,7 @@ TEST_SUITE("renderer") {
 
     TEST_CASE("an invalid sprite is ignored rather than read out of bounds") {
         constexpr std::array<std::uint8_t, 1> kTooSmall{0xFF};
-        const Sprite sprite{kTooSmall, 8, 4}; // needs 4 bytes, has 1
+        const Sprite sprite{.bits = kTooSmall, .width = 8, .height = 4}; // needs 4 bytes, has 1
         CHECK_FALSE(sprite.valid());
 
         Framebuffer fb;

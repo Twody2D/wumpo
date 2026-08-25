@@ -11,6 +11,8 @@ add_executable(wumpo_tests
     unit/test_version.cpp
     unit/test_framebuffer.cpp
     unit/test_font.cpp
+    unit/test_input.cpp
+    unit/test_loop.cpp
 )
 
 target_link_libraries(wumpo_tests

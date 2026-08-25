@@ -26,7 +26,11 @@ param(
     [string[]]$Rest
 )
 
-$ErrorActionPreference = 'Stop'
+# Deliberately not 'Stop'. Windows PowerShell turns anything a native tool
+# writes to stderr into an error record, and under 'Stop' that aborts the script
+# on the first progress line clang-tidy or ninja prints. Exit codes are checked
+# explicitly after every external command instead.
+$ErrorActionPreference = 'Continue'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $buildDir = Join-Path $repoRoot "build\$Preset"
 
@@ -132,10 +136,14 @@ switch ($Command) {
         # clang-tidy needs compile_commands.json, which only exists after configure.
         $db = Join-Path $buildDir 'compile_commands.json'
         if (-not (Test-Path $db)) { Invoke-Configure }
-        $files = Get-SourceFiles | Where-Object { $_.Extension -eq '.cpp' }
+        # Lint what this preset actually compiles, so the set cannot drift from
+        # the build and the SDL backend is skipped when it is not being built.
+        $lister = Join-Path $repoRoot 'tools\list_compiled_sources.py'
+        $files = & python $lister $buildDir
+        if ($LASTEXITCODE -ne 0) { Write-Output "could not list sources"; exit $LASTEXITCODE }
         if (-not $files) { Write-Output 'No sources to lint.'; break }
         $clangTidy = Get-Tool clang-tidy
-        & $clangTidy -p $buildDir --warnings-as-errors='*' @($files.FullName)
+        & $clangTidy -p $buildDir --warnings-as-errors='*' @($files)
         if ($LASTEXITCODE -ne 0) { Write-Output "clang-tidy reported problems (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
         Write-Output "Linted $($files.Count) file(s)."
     }

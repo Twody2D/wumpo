@@ -90,9 +90,9 @@ jobs:
 
       - name: Check formatting
         run: |
-          files=$(find src emulator tests tools -name '*.cpp' -o -name '*.hpp' \
-                  | grep -v '/third_party/' || true)
-          if [ -z "$files" ]; then echo "no sources"; exit 0; fi
+          files=$(find src emulator tests -name '*.cpp' -o -name '*.hpp' \
+                  | grep -v 'third_party' || true)
+          if [ -z "$files" ]; then echo "found no sources to check"; exit 1; fi
           clang-format --dry-run --Werror $files
 
       # clang-tidy needs a compilation database, so configure first. The core
@@ -106,7 +106,6 @@ jobs:
 
       - name: Run clang-tidy
         run: |
-          files=$(find src emulator tests tools -name '*.cpp' \
-                  | grep -v '/third_party/' || true)
-          if [ -z "$files" ]; then echo "no sources"; exit 0; fi
+          files=$(python3 tools/list_compiled_sources.py build/ci-core)
+          echo "$files"
           clang-tidy -p build/ci-core --warnings-as-errors='*' $files

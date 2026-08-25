@@ -28,6 +28,10 @@ HeaderFilterRegex: '.*(src|emulator|tools)[/\].*\.(hpp|h)$'
 # Empty locally so the editor stays usable; CI passes --warnings-as-errors=*.
 WarningsAsErrors: ''
 
+# clang-tidy parses the MSVC command line from compile_commands.json and then
+# reports MSVC-only flags as unused. Nothing to fix in the code.
+ExtraArgs: ['-Qunused-arguments']
+
 CheckOptions:
   - key: readability-identifier-naming.NamespaceCase
     value: lower_case

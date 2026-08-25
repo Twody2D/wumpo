@@ -11,7 +11,8 @@ constexpr std::uint8_t bitMask(int x) noexcept {
 }
 
 constexpr std::size_t byteIndex(int x, int y) noexcept {
-    return static_cast<std::size_t>(y * Framebuffer::kBytesPerRow + (x / 8));
+    return static_cast<std::size_t>(y) * Framebuffer::kBytesPerRow +
+           static_cast<std::size_t>(x / 8);
 }
 
 } // namespace
@@ -52,8 +53,8 @@ void Framebuffer::drawLine(int x0, int y0, int x1, int y1, bool on) noexcept {
 
     // Integer Bresenham: no floating point anywhere in rendering either, so a
     // line drawn on the device is the same line drawn in a golden baseline.
-    int dx = std::abs(x1 - x0);
-    int dy = -std::abs(y1 - y0);
+    const int dx = std::abs(x1 - x0);
+    const int dy = -std::abs(y1 - y0);
     const int step_x = x0 < x1 ? 1 : -1;
     const int step_y = y0 < y1 ? 1 : -1;
     int error = dx + dy;
@@ -120,7 +121,9 @@ void Framebuffer::drawSprite(int x, int y, const Sprite& sprite, bool on) noexce
             if (target_x < 0 || target_x >= kWidth) {
                 continue;
             }
-            const std::size_t index = static_cast<std::size_t>(row * bytes_per_row + (column / 8));
+            const auto index =
+                static_cast<std::size_t>(row) * static_cast<std::size_t>(bytes_per_row) +
+                static_cast<std::size_t>(column / 8);
             const bool lit = (sprite.bits[index] & bitMask(column)) != 0;
             if (lit) {
                 setPixel(target_x, target_y, on);
