@@ -12,6 +12,7 @@ add_library(wumpo_core STATIC
     core/version.cpp
     renderer/framebuffer.cpp
     renderer/font.cpp
+    renderer/pbm.cpp
 )
 
 add_library(wumpo::core ALIAS wumpo_core)
