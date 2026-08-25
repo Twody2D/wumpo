@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Nothing here needs write access, and nothing here needs a secret.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Third-party actions are pinned by commit SHA, not by tag: a tag can be moved.
+jobs:
+  # Fast gate: proves game logic, runtime and the whole test suite build and pass
+  # with the desktop backend and SDL absent entirely.
+  core:
+    name: Core (Linux, clang, sanitizers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang
+
+      - name: Configure
+        env:
+          CC: clang
+          CXX: clang++
+        run: >
+          cmake --preset ci-core
+          -DWUMPO_SANITIZE="address;undefined"
+
+      - name: Build
+        run: cmake --build --preset ci-core
+
+      - name: Test
+        run: ctest --preset ci-core
+
+  # Full build including the SDL3 backend, on the platform development happens on.
+  windows:
+    name: Full (Windows, MSVC)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Read pinned SDL tag
+        id: sdl
+        shell: bash
+        run: |
+          tag=$(grep -oP 'WUMPO_SDL_TAG "\K[^"]+' cmake/WumpoDependencies.cmake)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # SDL3 is built from source once and reused; the key changes with the tag.
+      - name: Cache SDL3 build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: build/debug/_deps
+          key: sdl3-${{ runner.os }}-${{ steps.sdl.outputs.tag }}
+
+      # Entering the MSVC environment by hand rather than through a third-party
+      # action: this is five lines we can read, instead of a dependency that
+      # runs with full access to the job.
+      - name: Set up MSVC
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installerswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $vcvars = Join-Path $vsPath 'VC\Auxiliary\Buildcvars64.bat'
+          cmd /c "`"$vcvars`" >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              "$($matches[1])=$($matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            }
+          }
+
+      - name: Configure
+        run: cmake --preset debug -DWUMPO_WERROR=ON
+
+      - name: Build
+        run: cmake --build --preset debug
+
+      - name: Test
+        run: ctest --preset debug
+
+  quality:
+    name: Format and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang clang-format clang-tidy
+
+      - name: Check formatting
+        run: |
+          files=$(find src emulator tests tools -name '*.cpp' -o -name '*.hpp' \
+                  | grep -v '/third_party/' || true)
+          if [ -z "$files" ]; then echo "no sources"; exit 0; fi
+          clang-format --dry-run --Werror $files
+
+      # clang-tidy needs a compilation database, so configure first. The core
+      # preset is enough: it covers everything except the SDL backend, which
+      # cannot be linted on a runner without SDL headers anyway.
+      - name: Configure for lint
+        env:
+          CC: clang
+          CXX: clang++
+        run: cmake --preset ci-core
+
+      - name: Run clang-tidy
+        run: |
+          files=$(find src emulator tests tools -name '*.cpp' \
+                  | grep -v '/third_party/' || true)
+          if [ -z "$files" ]; then echo "no sources"; exit 0; fi
+          clang-tidy -p build/ci-core --warnings-as-errors='*' $files
