@@ -1,5 +1,6 @@
 #include "core/config.hpp"
 #include "core/loop.hpp"
+#include "core/replay.hpp"
 #include "core/version.hpp"
 #include "game/demo_scene.hpp"
 #include "input/input_state.hpp"
@@ -12,14 +13,17 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace {
 
+using wumpo::core::Replay;
 using wumpo::core::TickAccumulator;
 using wumpo::game::DemoScene;
+using wumpo::input::ButtonMask;
 using wumpo::input::InputState;
 using wumpo::platform::desktop::DesktopPlatform;
 using wumpo::platform::desktop::WindowStyle;
@@ -34,6 +38,8 @@ struct Options {
     /// other value makes a run finite and therefore scriptable.
     int ticks = 0;
     std::filesystem::path screenshot;
+    std::filesystem::path record_path;
+    std::filesystem::path replay_path;
 };
 
 void printUsage() {
@@ -46,6 +52,9 @@ void printUsage() {
                 "  --scale N           display scale: 1, 2, 4 or 8 (default 8)\n"
                 "  --ticks N           stop after N simulation ticks\n"
                 "  --screenshot FILE   write the final frame as a PBM image and exit\n"
+                "  --record FILE       write every held-button mask to a replay file\n"
+                "  --replay FILE       drive input from a replay file instead of the input\n"
+                "                      device, stopping when it is exhausted\n"
                 "  --headless          run with no window, audio or input\n"
                 "  --debug             start with the debug overlay visible\n"
                 "  --help              this text\n"
@@ -114,6 +123,16 @@ bool parseOptions(int argc, char** argv, Options& options, bool& should_exit) {
                 return false;
             }
             options.screenshot = std::filesystem::path(value);
+        } else if (argument == "--record") {
+            if (!next(argument, value)) {
+                return false;
+            }
+            options.record_path = std::filesystem::path(value);
+        } else if (argument == "--replay") {
+            if (!next(argument, value)) {
+                return false;
+            }
+            options.replay_path = std::filesystem::path(value);
         } else {
             std::fprintf(stderr, "wumpo: unknown option '%.*s' (try --help)\n",
                          static_cast<int>(argument.size()), argument.data());
@@ -125,7 +144,38 @@ bool parseOptions(int argc, char** argv, Options& options, bool& should_exit) {
         std::fprintf(stderr, "wumpo: --scale must be 1, 2, 4 or 8 for pixel-perfect output\n");
         return false;
     }
+    if (!options.record_path.empty() && !options.replay_path.empty()) {
+        std::fprintf(stderr, "wumpo: --record and --replay cannot be combined\n");
+        return false;
+    }
     return true;
+}
+
+/// Reads a whole file as text. Replay files are small - a run long enough to
+/// matter is still a few kilobytes of JSON - so there is no reason to stream.
+bool readReplay(const std::filesystem::path& path, Replay& replay, std::string& error) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        error = "could not open " + path.string();
+        return false;
+    }
+    const std::string text((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+    return wumpo::core::fromJson(text, replay, &error);
+}
+
+bool writeReplay(const Replay& replay, const std::filesystem::path& path) {
+    std::error_code code;
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path(), code);
+    }
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file) {
+        std::fprintf(stderr, "wumpo: could not write %s\n", path.string().c_str());
+        return false;
+    }
+    file << wumpo::core::toJson(replay);
+    return file.good();
 }
 
 std::vector<std::string> overlayLines(const DemoScene& scene, int fps,
@@ -174,6 +224,22 @@ int main(int argc, char** argv) {
     }
 
     std::string error;
+
+    const bool replaying = !options.replay_path.empty();
+    const bool recording = !options.record_path.empty();
+    Replay replay_in;
+    std::size_t replay_position = 0;
+    if (replaying) {
+        if (!readReplay(options.replay_path, replay_in, error)) {
+            std::fprintf(stderr, "wumpo: %s: %s\n", options.replay_path.string().c_str(),
+                         error.c_str());
+            return 1;
+        }
+        options.seed = replay_in.seed;
+    }
+    Replay replay_out;
+    replay_out.seed = options.seed;
+
     const WindowStyle style{.scale = options.scale, .bezel = 6, .overlay_rows = 3};
     auto platform = DesktopPlatform::create("Wumpo", style, options.headless, &error);
     if (!platform) {
@@ -189,8 +255,9 @@ int main(int argc, char** argv) {
 
     // Headless runs are driven by tick count alone: no window to close, no
     // clock to wait for. That is what makes screenshots and replay checks
-    // reproducible in CI.
-    if (options.headless && options.ticks == 0) {
+    // reproducible in CI. A replay already has its own end, reached when its
+    // recorded inputs run out.
+    if (options.headless && options.ticks == 0 && !replaying) {
         options.ticks = 1;
     }
 
@@ -207,7 +274,11 @@ int main(int argc, char** argv) {
         }
 
         const auto commands = platform->takeCommands();
-        if (commands.restart) {
+        // A hard reset has no representation in the replay format - it is a
+        // developer hotkey, not a recorded input - so it is disabled while
+        // recording or replaying rather than silently desyncing one from the
+        // other.
+        if (commands.restart && !recording && !replaying) {
             scene.reset(options.seed);
             input.reset();
             accumulator.reset();
@@ -226,7 +297,21 @@ int main(int argc, char** argv) {
         previous_time = now;
 
         for (int i = 0; i < ticks; ++i) {
-            input.update(platform->input().pollButtons());
+            ButtonMask mask = 0;
+            if (replaying) {
+                if (replay_position >= replay_in.inputs.size()) {
+                    running = false;
+                    break;
+                }
+                mask = replay_in.inputs[replay_position++];
+            } else {
+                mask = platform->input().pollButtons();
+            }
+            input.update(mask);
+            if (recording) {
+                replay_out.inputs.push_back(mask);
+            }
+
             const DemoScene::Sound sound = scene.tick(input);
             if (!sound.silent()) {
                 platform->audio().tone(sound.frequency_hz, sound.duration_ms);
@@ -269,6 +354,13 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::printf("wrote %s\n", options.screenshot.string().c_str());
+    }
+
+    if (recording) {
+        if (!writeReplay(replay_out, options.record_path)) {
+            return 1;
+        }
+        std::printf("wrote %s\n", options.record_path.string().c_str());
     }
 
     std::printf("wumpo %s | ticks %d | score %d | seed %llu | state %016llx\n",
