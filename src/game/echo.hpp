@@ -101,11 +101,14 @@ private:
 
     // Unlike The Shift, the gap does not slide in a readable pattern: each
     // wall draws a fresh offset from wherever the player currently stands, in
-    // a random direction and magnitude up to kMaxGapJump (see echo.cpp). The
-    // jump is bounded rather than screen-wide so that it always stays
-    // physically reachable in the time a wall takes to fall, however far the
-    // difficulty ramp has shortened that time - an unbounded jump paired with
-    // a shrinking fall budget is exactly the speed-mismatch bug The Shift had.
+    // a random direction and a magnitude between kMinGapJump and kMaxGapJump
+    // (see echo.cpp). Bounded above so it always stays physically reachable
+    // in the time a wall takes to fall, however far the difficulty ramp has
+    // shortened that time - an unbounded jump paired with a shrinking fall
+    // budget is exactly the speed-mismatch bug The Shift had. Bounded below
+    // so a jump can never be small enough to leave the player already
+    // standing in the new gap by chance - that turned entire runs into a
+    // score that climbed on its own, without the player doing anything.
     int gap_x_ = 0;
     int gap_width_ = 0;
 

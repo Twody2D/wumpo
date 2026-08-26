@@ -258,6 +258,24 @@ TEST_SUITE("game") {
         CHECK(dark.width == config::kScreenWidth);
     }
 
+    TEST_CASE("a player who never moves never scores by accident") {
+        // The bug this guards against: a gap jump small enough to leave the
+        // player already standing inside the new gap scored runs on their
+        // own, without the player doing anything - "nothing is visible, but
+        // the counter keeps going up". A stationary player must always
+        // eventually miss.
+        for (std::uint64_t seed = 1; seed <= 20; ++seed) {
+            EchoGame game(seed);
+            InputState state;
+            for (int tick = 0; tick < 400 && game.phase() == EchoGame::Phase::Playing; ++tick) {
+                state.update(0);
+                (void)game.tick(state);
+            }
+            CHECK(game.phase() == EchoGame::Phase::Over);
+            CHECK(game.score() == 0);
+        }
+    }
+
     TEST_CASE("a ping cannot be re-triggered before its cooldown clears") {
         EchoGame game(1);
         InputState state;

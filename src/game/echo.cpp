@@ -20,12 +20,19 @@ constexpr int kInitialGapWidth = 14;
 constexpr int kMinGapWidth = 8;
 constexpr int kInitialFallEveryTicks = 8;
 constexpr int kMinFallEveryTicks = 3;
-/// How many pixels either side of the player's current position a fresh gap
-/// may land. Bounded, not screen-wide: at the fall-speed floor a wall takes
-/// (kPlayerRow - kPlayfieldTop) * kMinFallEveryTicks ticks to land, and this
-/// jump must stay reachable within that budget even with zero ticks spent
-/// waiting on the ping cooldown - see the comment on gap_x_ in echo.hpp.
-constexpr int kMaxGapJump = 10;
+/// How far, in either direction, a fresh gap jumps from the player's current
+/// position. Both bounds matter:
+///
+/// - kMinGapJump must exceed kInitialGapWidth - kPlayerWidth (14 - 3 = 11):
+///   otherwise a jump smaller than that leaves the player already standing
+///   inside the new gap purely by chance, without having to move at all -
+///   the run then scores itself. 12 is the smallest integer past that line.
+/// - kMaxGapJump must stay reachable: at the fall-speed floor a wall takes
+///   (kPlayerRow - kPlayfieldTop) * kMinFallEveryTicks = 22 * 3 = 66 ticks to
+///   land, and kMaxGapJump * kMoveEveryTicks must stay comfortably under that
+///   even after the one tick a ping itself costs.
+constexpr int kMinGapJump = 12;
+constexpr int kMaxGapJump = 15;
 /// Every this many points, the wall falls a tick faster and the gap narrows -
 /// simple start, rising ceiling, per docs/game-design/principles.md.
 constexpr int kSpeedupEveryScore = 3;
@@ -65,12 +72,22 @@ void EchoGame::resetWall() noexcept {
     // A fresh offset every wall, not a slide: The Shift's gap moves in a
     // pattern you can learn to read on sight, but here sight is exactly what
     // is taken away, so the direction and size of the jump are randomised
-    // every time. It is bounded to kMaxGapJump around the player's own
-    // position rather than screen-wide, so it always stays reachable - see
-    // the comment on kMaxGapJump above.
+    // every time. The magnitude is always at least kMinGapJump - never a
+    // near-zero jump the player happens to already be standing in - and
+    // whichever direction keeps the whole jump on screen is preferred, so the
+    // magnitude is never silently shrunk by clamping either. See the
+    // comments on kMinGapJump/kMaxGapJump above.
     const int max_gap_x = config::kScreenWidth - gap_width_;
-    const int jump = rng_.nextRange(-kMaxGapJump, kMaxGapJump);
-    gap_x_ = std::clamp(player_x_ + jump, 0, max_gap_x);
+    const int magnitude = rng_.nextRange(kMinGapJump, kMaxGapJump);
+    const bool fits_right = player_x_ + magnitude <= max_gap_x;
+    const bool fits_left = player_x_ - magnitude >= 0;
+    int direction = 1;
+    if (fits_right && fits_left) {
+        direction = rng_.nextBool() ? 1 : -1;
+    } else if (fits_left) {
+        direction = -1;
+    }
+    gap_x_ = std::clamp(player_x_ + (direction * magnitude), 0, max_gap_x);
 }
 
 bool EchoGame::playerClearsGap() const noexcept {
