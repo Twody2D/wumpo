@@ -1,5 +1,4 @@
 #include "core/fixed_string.hpp"
-#include "game/demo_scene.hpp"
 #include "game/shift.hpp"
 #include "input/button.hpp"
 #include "input/input_state.hpp"
@@ -77,7 +76,6 @@ void operator delete[](void* block, std::size_t size) noexcept {
     std::free(block);
 }
 
-using wumpo::game::DemoScene;
 using wumpo::game::ShiftGame;
 using wumpo::input::Button;
 using wumpo::input::ButtonMask;
@@ -99,79 +97,6 @@ TEST_SUITE("alloc") {
         CHECK(counted == 1);
     }
 
-    TEST_CASE("ten thousand ticks allocate nothing") {
-        DemoScene scene(12345);
-        InputState state;
-
-        // Constructed outside the guard: setting a run up may allocate, playing it
-        // may not.
-        {
-            const AllocationGuard guard;
-            for (int tick = 0; tick < 10'000; ++tick) {
-                ButtonMask mask = 0;
-                if (tick % 5 < 2) {
-                    mask = static_cast<ButtonMask>(mask | input::maskOf(Button::Right));
-                }
-                if (tick % 9 < 3) {
-                    mask = static_cast<ButtonMask>(mask | input::maskOf(Button::Up));
-                }
-                if (tick % 31 == 0) {
-                    mask = static_cast<ButtonMask>(mask | input::maskOf(Button::A));
-                }
-                state.update(mask);
-                (void)scene.tick(state);
-            }
-            CHECK(AllocationGuard::count() == 0);
-        }
-    }
-
-    TEST_CASE("rendering allocates nothing, including the game over screen") {
-        // Drawing happens every frame forever. A single std::to_string here is an
-        // allocation per frame, which is what this test exists to catch.
-        DemoScene scene(1);
-        Framebuffer frame;
-        InputState state;
-
-        {
-            const AllocationGuard guard;
-            scene.render(frame);
-            CHECK(AllocationGuard::count() == 0);
-        }
-
-        // Run it out so the game over screen, with its formatted score, is drawn.
-        for (int tick = 0; tick < DemoScene::kRunTicks; ++tick) {
-            state.update(0);
-            (void)scene.tick(state);
-        }
-        REQUIRE(scene.phase() == DemoScene::Phase::Over);
-
-        {
-            const AllocationGuard guard;
-            scene.render(frame);
-            CHECK(AllocationGuard::count() == 0);
-        }
-    }
-
-    TEST_CASE("a restart allocates nothing") {
-        // Restarting is the most common thing a player does, and reseeding a
-        // generator or clearing state are all places a container could creep in.
-        DemoScene scene(1);
-        InputState state;
-        for (int tick = 0; tick < DemoScene::kRunTicks; ++tick) {
-            state.update(0);
-            (void)scene.tick(state);
-        }
-        REQUIRE(scene.phase() == DemoScene::Phase::Over);
-
-        {
-            const AllocationGuard guard;
-            state.update(input::maskOf(Button::A));
-            (void)scene.tick(state);
-            CHECK(AllocationGuard::count() == 0);
-        }
-        CHECK(scene.phase() == DemoScene::Phase::Playing);
-    }
-
     TEST_CASE("building screen text allocates nothing") {
         const AllocationGuard guard;
         wumpo::core::ScreenText text("SCORE ");
@@ -190,7 +115,7 @@ TEST_SUITE("alloc") {
     TEST_CASE("a whole frame of runtime work allocates nothing") {
         // The realistic loop: poll, tick, render. If any layer starts allocating,
         // this is where it shows up.
-        DemoScene scene(7);
+        ShiftGame game(7);
         InputState state;
         Framebuffer frame;
 
@@ -198,8 +123,8 @@ TEST_SUITE("alloc") {
             const AllocationGuard guard;
             for (int frame_index = 0; frame_index < 600; ++frame_index) {
                 state.update(input::maskOf(Button::Right));
-                (void)scene.tick(state);
-                scene.render(frame);
+                (void)game.tick(state);
+                game.render(frame);
             }
             CHECK(AllocationGuard::count() == 0);
         }

@@ -511,9 +511,6 @@ bool DesktopPlatform::pump() {
             case SDL_SCANCODE_F1:
                 impl_->commands.restart = true;
                 break;
-            case SDL_SCANCODE_F2:
-                impl_->commands.toggle_demo = true;
-                break;
             case SDL_SCANCODE_F3:
                 impl_->commands.toggle_debug = true;
                 break;

@@ -2,7 +2,7 @@
 #include "core/loop.hpp"
 #include "core/replay.hpp"
 #include "core/version.hpp"
-#include "game/demo_scene.hpp"
+#include "game/shift.hpp"
 #include "input/input_state.hpp"
 #include "platform/desktop/desktop_platform.hpp"
 #include "renderer/framebuffer.hpp"
@@ -23,7 +23,7 @@ namespace {
 
 using wumpo::core::Replay;
 using wumpo::core::TickAccumulator;
-using wumpo::game::DemoScene;
+using wumpo::game::ShiftGame;
 using wumpo::input::ButtonMask;
 using wumpo::input::InputState;
 using wumpo::platform::desktop::DesktopPlatform;
@@ -48,7 +48,6 @@ void printUsage() {
                 "\n"
                 "Usage: wumpo [options]\n"
                 "\n"
-                "  --demo              run the demo scene (currently the only thing to run)\n"
                 "  --seed N            seed the run (default 1)\n"
                 "  --scale N           display scale: 1, 2, 4 or 8 (default 8)\n"
                 "  --ticks N           stop after N simulation ticks\n"
@@ -61,7 +60,7 @@ void printUsage() {
                 "  --help              this text\n"
                 "\n"
                 "Keys: arrows move, Z or Enter is A, X is B.\n"
-                "      F1 restart, F2 demo, F3 overlay, F4 screenshot, 1/2/4/8 scale, Esc quit.\n",
+                "      F1 restart, F3 overlay, F4 screenshot, 1/2/4/8 scale, Esc quit.\n",
                 wumpo::core::versionString());
 }
 
@@ -99,9 +98,6 @@ bool parseOptions(int argc, char** argv, Options& options, bool& should_exit) {
             printUsage();
             should_exit = true;
             return true;
-        }
-        if (argument == "--demo") {
-            continue; // the demo scene is all there is to run today
         }
         if (argument == "--headless") {
             options.headless = true;
@@ -179,7 +175,7 @@ bool writeReplay(const Replay& replay, const std::filesystem::path& path) {
     return file.good();
 }
 
-std::vector<std::string> overlayLines(const DemoScene& scene, int fps,
+std::vector<std::string> overlayLines(const ShiftGame& game, int fps,
                                       wumpo::input::ButtonMask buttons) {
     std::string input_text = "INPUT ";
     for (const auto button : wumpo::input::kAllButtonList) {
@@ -190,11 +186,11 @@ std::vector<std::string> overlayLines(const DemoScene& scene, int fps,
     }
 
     return {
-        "FPS " + std::to_string(fps) + "  TICK " + std::to_string(scene.tickCount()) + "  SEED " +
-            std::to_string(scene.seed()),
-        std::string("STATE ") + (scene.phase() == DemoScene::Phase::Playing ? "PLAYING" : "OVER") +
-            "  SCORE " + std::to_string(scene.score()) + "  BEST " +
-            std::to_string(scene.highScore()),
+        "FPS " + std::to_string(fps) + "  TICK " + std::to_string(game.tickCount()) + "  SEED " +
+            std::to_string(game.seed()),
+        std::string("STATE ") + (game.phase() == ShiftGame::Phase::Playing ? "PLAYING" : "OVER") +
+            "  SCORE " + std::to_string(game.score()) + "  BEST " +
+            std::to_string(game.highScore()),
         input_text,
     };
 }
@@ -260,7 +256,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "wumpo: save data unreadable, starting fresh\n");
     }
 
-    DemoScene scene(options.seed, static_cast<int>(save_data.high_score));
+    ShiftGame game(options.seed, static_cast<int>(save_data.high_score));
     InputState input;
     Framebuffer frame;
     TickAccumulator accumulator;
@@ -291,7 +287,7 @@ int main(int argc, char** argv) {
         // recording or replaying rather than silently desyncing one from the
         // other.
         if (commands.restart && !recording && !replaying) {
-            scene.reset(options.seed);
+            game.reset(options.seed);
             input.reset();
             accumulator.reset();
         }
@@ -324,7 +320,7 @@ int main(int argc, char** argv) {
                 replay_out.inputs.push_back(mask);
             }
 
-            const DemoScene::Sound sound = scene.tick(input);
+            const ShiftGame::Sound sound = game.tick(input);
             if (!sound.silent()) {
                 platform->audio().tone(sound.frequency_hz, sound.duration_ms);
             }
@@ -335,10 +331,10 @@ int main(int argc, char** argv) {
             }
         }
 
-        scene.render(frame);
+        game.render(frame);
 
         if (options.debug_overlay) {
-            const auto lines = overlayLines(scene, fps, input.downMask());
+            const auto lines = overlayLines(game, fps, input.downMask());
             platform->setOverlayLines(lines);
         }
 
@@ -346,7 +342,7 @@ int main(int argc, char** argv) {
 
         if (commands.screenshot) {
             const auto path = platform->dataDirectory() /
-                              ("screenshot-" + std::to_string(scene.tickCount()) + ".pbm");
+                              ("screenshot-" + std::to_string(game.tickCount()) + ".pbm");
             if (writeFrame(frame, path)) {
                 std::printf("wrote %s\n", path.string().c_str());
             }
@@ -361,7 +357,7 @@ int main(int argc, char** argv) {
     }
 
     if (!options.screenshot.empty()) {
-        scene.render(frame);
+        game.render(frame);
         if (!writeFrame(frame, options.screenshot)) {
             return 1;
         }
@@ -377,16 +373,16 @@ int main(int argc, char** argv) {
 
     // Written once on exit, not every time the score changes: flash and EEPROM
     // wear out, and this is the backend that has to live with that on hardware.
-    if (scene.highScore() > static_cast<int>(save_data.high_score)) {
-        save_data.high_score = static_cast<std::uint32_t>(scene.highScore());
+    if (game.highScore() > static_cast<int>(save_data.high_score)) {
+        save_data.high_score = static_cast<std::uint32_t>(game.highScore());
         if (!wumpo::storage::store(platform->storage(), save_data)) {
             std::fprintf(stderr, "wumpo: could not write save data\n");
         }
     }
 
     std::printf("wumpo %s | ticks %d | score %d | best %d | seed %llu | state %016llx\n",
-                wumpo::core::versionString(), scene.tickCount(), scene.score(), scene.highScore(),
-                static_cast<unsigned long long>(scene.seed()),
-                static_cast<unsigned long long>(scene.stateHash()));
+                wumpo::core::versionString(), game.tickCount(), game.score(), game.highScore(),
+                static_cast<unsigned long long>(game.seed()),
+                static_cast<unsigned long long>(game.stateHash()));
     return 0;
 }

@@ -29,7 +29,6 @@ namespace wumpo::platform::desktop {
 /// and no function keys.
 struct HostCommands {
     bool restart = false;      // F1
-    bool toggle_demo = false;  // F2
     bool toggle_debug = false; // F3
     bool screenshot = false;   // F4
     int requested_scale = 0;   // 1, 2, 4, 8 - zero means unchanged

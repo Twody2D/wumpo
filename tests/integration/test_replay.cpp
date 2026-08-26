@@ -1,5 +1,5 @@
 #include "core/replay.hpp"
-#include "game/demo_scene.hpp"
+#include "game/shift.hpp"
 #include "input/button.hpp"
 #include "input/input_state.hpp"
 
@@ -9,7 +9,7 @@
 #include <string>
 
 using wumpo::core::Replay;
-using wumpo::game::DemoScene;
+using wumpo::game::ShiftGame;
 using wumpo::input::Button;
 using wumpo::input::ButtonMask;
 using wumpo::input::InputState;
@@ -19,13 +19,13 @@ namespace input = wumpo::input;
 namespace {
 
 std::uint64_t playBack(const Replay& replay) {
-    DemoScene scene(replay.seed);
+    ShiftGame game(replay.seed);
     InputState state;
     for (const ButtonMask mask : replay.inputs) {
         state.update(mask);
-        (void)scene.tick(state);
+        (void)game.tick(state);
     }
-    return scene.stateHash();
+    return game.stateHash();
 }
 
 } // namespace
@@ -112,7 +112,7 @@ TEST_SUITE("replay") {
         Replay recording;
         recording.seed = 4242;
 
-        DemoScene live(recording.seed);
+        ShiftGame live(recording.seed);
         InputState state;
         for (int tick = 0; tick < 400; ++tick) {
             // A pattern with holds, releases and combinations, so edges matter.
