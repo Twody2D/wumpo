@@ -85,7 +85,7 @@ public:
 
 private:
     void resetWall() noexcept;
-    void applyShiftPulse() noexcept;
+    void beginShift() noexcept;
     [[nodiscard]] bool playerClearsGap() const noexcept;
 
     core::Pcg32 rng_;
@@ -96,8 +96,16 @@ private:
     // compiler and on an MCU with no FPU.
     int player_x_ = 0;
     int wall_y_ = 0;
+
+    // The gap slides one pixel per tick toward gap_target_x_ rather than
+    // jumping there in one frame: an instant jump gives the eye nothing to
+    // read a direction from, which defeats a game about predicting a
+    // movement. gap_direction_ is the direction the *next* shift will try to
+    // continue in, before edge reflection.
     int gap_x_ = 0;
+    int gap_target_x_ = 0;
     int gap_direction_ = 1; // +1 or -1
+    int slide_ticks_remaining_ = 0;
 
     // Difficulty ramps by shortening these two periods as the score grows.
     int fall_every_ticks_ = 0;

@@ -42,7 +42,9 @@ void ShiftGame::reset(std::uint64_t seed) {
     // one continuous process the walls merely fall through, not a fresh draw
     // per wall.
     gap_x_ = rng_.nextRange(0, kMaxGapX);
+    gap_target_x_ = gap_x_;
     gap_direction_ = rng_.nextBool() ? 1 : -1;
+    slide_ticks_remaining_ = 0;
     shift_period_ticks_ = kInitialShiftPeriodTicks;
     shift_countdown_ = shift_period_ticks_;
 
@@ -58,18 +60,23 @@ void ShiftGame::resetWall() noexcept {
     fall_countdown_ = fall_every_ticks_;
 }
 
-void ShiftGame::applyShiftPulse() noexcept {
+void ShiftGame::beginShift() noexcept {
     // A reflection off the edges rather than a wraparound: a gap that
     // teleports from one edge to the other is unreadable, while a bounce
-    // stays a single predictable pattern to watch and plan around.
-    gap_x_ += gap_direction_ * kShiftStep;
-    if (gap_x_ < 0) {
-        gap_x_ = -gap_x_;
+    // stays a single predictable pattern to watch and plan around. The move
+    // itself is likewise spread over kShiftStep ticks in tick() rather than
+    // applied here in one frame - a jump gives the eye nothing to read a
+    // direction from.
+    int target = gap_x_ + gap_direction_ * kShiftStep;
+    if (target < 0) {
+        target = -target;
         gap_direction_ = 1;
-    } else if (gap_x_ > kMaxGapX) {
-        gap_x_ = 2 * kMaxGapX - gap_x_;
+    } else if (target > kMaxGapX) {
+        target = 2 * kMaxGapX - target;
         gap_direction_ = -1;
     }
+    gap_target_x_ = target;
+    slide_ticks_remaining_ = kShiftStep;
 }
 
 bool ShiftGame::playerClearsGap() const noexcept {
@@ -99,14 +106,21 @@ ShiftGame::Sound ShiftGame::tick(const input::InputState& input) {
         player_x_ = std::clamp(player_x_ + dx, 0, config::kScreenWidth - kPlayerWidth);
     }
 
-    // The pulse is applied before the fall check so a wall that arrives on the
-    // exact tick of a pulse is judged against the gap's new position - the
-    // rule a player watching the beat bar reset would expect.
+    // A pulse starts a slide toward the new target; the slide itself advances
+    // here too, before the fall check, so a wall that arrives mid-slide is
+    // judged against wherever the gap has visibly moved to by that exact
+    // tick - never a value it hasn't been drawn at.
     bool pulsed = false;
     if (--shift_countdown_ <= 0) {
-        applyShiftPulse();
+        beginShift();
         shift_countdown_ = shift_period_ticks_;
         pulsed = true;
+    }
+    if (slide_ticks_remaining_ > 0) {
+        if (gap_x_ != gap_target_x_) {
+            gap_x_ += (gap_target_x_ > gap_x_) ? 1 : -1;
+        }
+        --slide_ticks_remaining_;
     }
 
     if (--fall_countdown_ <= 0) {
@@ -193,7 +207,9 @@ std::uint64_t ShiftGame::stateHash() const noexcept {
     mix(static_cast<std::uint64_t>(player_x_));
     mix(static_cast<std::uint64_t>(wall_y_));
     mix(static_cast<std::uint64_t>(gap_x_));
+    mix(static_cast<std::uint64_t>(gap_target_x_));
     mix(static_cast<std::uint64_t>(gap_direction_));
+    mix(static_cast<std::uint64_t>(slide_ticks_remaining_));
     mix(static_cast<std::uint64_t>(fall_every_ticks_));
     mix(static_cast<std::uint64_t>(shift_period_ticks_));
     mix(static_cast<std::uint64_t>(fall_countdown_));
