@@ -14,6 +14,7 @@ permissions:
 env:
   # Keep in step with docs/development/toolchain.md.
   LLVM_VERSION: "22"
+  CLANG_FORMAT_VERSION: "22.1.8"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -87,9 +88,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      # Pinned to the same major version developers install locally. clang-format
-      # output differs between releases, so an unpinned version turns a green
-      # local check into a red CI run over formatting nobody chose.
+      # Pinned to the version developers install locally. clang-format output
+      # differs between releases, so an unpinned version turns a green local
+      # check into a red CI run over formatting nobody chose.
+      #
+      # The versioned binaries are called directly rather than through
+      # update-alternatives: the runner image ships its own /usr/bin/clang-format,
+      # which alternatives will not displace, so the pin silently did nothing.
       - name: Install toolchain
         run: |
           sudo apt-get update
@@ -97,10 +102,21 @@ jobs:
           wget -qO llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh ${{ env.LLVM_VERSION }}
-          sudo apt-get install -y clang-format-${{ env.LLVM_VERSION }} clang-tidy-${{ env.LLVM_VERSION }}
-          sudo update-alternatives --install /usr/bin/clang-format clang-format             /usr/bin/clang-format-${{ env.LLVM_VERSION }} 100
-          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy             /usr/bin/clang-tidy-${{ env.LLVM_VERSION }} 100
+          sudo apt-get install -y clang-tidy-${{ env.LLVM_VERSION }}
+          # clang-format comes from PyPI, which publishes exact upstream releases
+          # for every platform - the same artifact a developer can install.
+          pipx install clang-format==${{ env.CLANG_FORMAT_VERSION }}
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # A pin that quietly falls back to another version is worse than no pin,
+      # because the failure looks like a formatting disagreement instead of a
+      # setup problem.
+      - name: Verify tool versions
+        run: |
           clang-format --version
+          clang-tidy-${{ env.LLVM_VERSION }} --version
+          clang-format --version | grep -q "${{ env.CLANG_FORMAT_VERSION }}" \
+            || { echo "expected clang-format ${{ env.CLANG_FORMAT_VERSION }}"; exit 1; }
 
       - name: Check formatting
         run: |
@@ -112,14 +128,17 @@ jobs:
       # clang-tidy needs a compilation database, so configure first. The core
       # preset is enough: it covers everything except the SDL backend, which
       # cannot be linted on a runner without SDL headers anyway.
+      # Configured with the same clang major version clang-tidy runs, so the two
+      # agree about standard library headers and flags. A mismatch shows up as
+      # errors in system headers that mean nothing about this code.
       - name: Configure for lint
         env:
-          CC: clang
-          CXX: clang++
+          CC: clang-${{ env.LLVM_VERSION }}
+          CXX: clang++-${{ env.LLVM_VERSION }}
         run: cmake --preset ci-core
 
       - name: Run clang-tidy
         run: |
           files=$(python3 tools/list_compiled_sources.py build/ci-core)
           echo "$files"
-          clang-tidy -p build/ci-core --warnings-as-errors='*' $files
+          clang-tidy-${{ env.LLVM_VERSION }} -p build/ci-core --warnings-as-errors='*' $files
