@@ -19,6 +19,7 @@ add_executable(wumpo_tests
     unit/test_allocations.cpp
     game/test_shift.cpp
     game/test_echo.cpp
+    game/test_host.cpp
     integration/test_replay.cpp
 )
 

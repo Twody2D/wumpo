@@ -1,7 +1,8 @@
 #include "core/replay.hpp"
-#include "game/shift.hpp"
+#include "game/host.hpp"
 #include "input/button.hpp"
 #include "input/input_state.hpp"
+#include "storage/save_data.hpp"
 
 #include <doctest.h>
 
@@ -9,23 +10,24 @@
 #include <string>
 
 using wumpo::core::Replay;
-using wumpo::game::ShiftGame;
+using wumpo::game::GameHost;
 using wumpo::input::Button;
 using wumpo::input::ButtonMask;
 using wumpo::input::InputState;
+using wumpo::storage::SaveData;
 namespace core = wumpo::core;
 namespace input = wumpo::input;
 
 namespace {
 
 std::uint64_t playBack(const Replay& replay) {
-    ShiftGame game(replay.seed);
+    GameHost host(replay.seed, SaveData{});
     InputState state;
     for (const ButtonMask mask : replay.inputs) {
         state.update(mask);
-        (void)game.tick(state);
+        (void)host.tick(state);
     }
-    return game.stateHash();
+    return host.stateHash();
 }
 
 } // namespace
@@ -112,7 +114,7 @@ TEST_SUITE("replay") {
         Replay recording;
         recording.seed = 4242;
 
-        ShiftGame live(recording.seed);
+        GameHost live(recording.seed, SaveData{});
         InputState state;
         for (int tick = 0; tick < 400; ++tick) {
             // A pattern with holds, releases and combinations, so edges matter.
@@ -136,6 +138,48 @@ TEST_SUITE("replay") {
 
         // Round-tripped through the file format, not just through memory: this
         // catches a serializer that loses a tick as well as a divergent simulation.
+        const std::string json = core::toJson(recording);
+        Replay parsed;
+        std::string error;
+        REQUIRE_MESSAGE(core::fromJson(json, parsed, &error), error);
+
+        CHECK(playBack(parsed) == live_hash);
+    }
+
+    TEST_CASE("a recording that switches games mid-session replays exactly") {
+        // Per ADR-008, holding A+B is ordinary input to GameHost, not a
+        // developer hotkey - so a recording spanning a game switch needs no
+        // special handling to replay correctly, unlike F1's hard restart.
+        Replay recording;
+        recording.seed = 4242;
+        const auto chord =
+            static_cast<ButtonMask>(input::maskOf(Button::A) | input::maskOf(Button::B));
+
+        GameHost live(recording.seed, SaveData{});
+        InputState state;
+        for (int tick = 0; tick < GameHost::kSwitchHoldTicks; ++tick) {
+            recording.inputs.push_back(chord);
+            state.update(chord);
+            (void)live.tick(state);
+        }
+        REQUIRE(live.mode() == GameHost::Mode::Selecting);
+
+        for (const ButtonMask mask :
+             {input::maskOf(Button::Down), ButtonMask{0}, input::maskOf(Button::A)}) {
+            recording.inputs.push_back(mask);
+            state.update(mask);
+            (void)live.tick(state);
+        }
+        REQUIRE(live.mode() == GameHost::Mode::Playing);
+
+        for (int tick = 0; tick < 50; ++tick) {
+            const ButtonMask mask = input::maskOf(Button::Right);
+            recording.inputs.push_back(mask);
+            state.update(mask);
+            (void)live.tick(state);
+        }
+
+        const std::uint64_t live_hash = live.stateHash();
         const std::string json = core::toJson(recording);
         Replay parsed;
         std::string error;

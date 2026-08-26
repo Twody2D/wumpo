@@ -16,6 +16,7 @@ add_library(wumpo_core STATIC
     renderer/pbm.cpp
     game/shift.cpp
     game/echo.cpp
+    game/host.cpp
     storage/save_data.cpp
 )
 

@@ -2,7 +2,7 @@
 #include "core/loop.hpp"
 #include "core/replay.hpp"
 #include "core/version.hpp"
-#include "game/shift.hpp"
+#include "game/host.hpp"
 #include "input/input_state.hpp"
 #include "platform/desktop/desktop_platform.hpp"
 #include "renderer/framebuffer.hpp"
@@ -23,7 +23,7 @@ namespace {
 
 using wumpo::core::Replay;
 using wumpo::core::TickAccumulator;
-using wumpo::game::ShiftGame;
+using wumpo::game::GameHost;
 using wumpo::input::ButtonMask;
 using wumpo::input::InputState;
 using wumpo::platform::desktop::DesktopPlatform;
@@ -60,7 +60,8 @@ void printUsage() {
                 "  --help              this text\n"
                 "\n"
                 "Keys: arrows move, Z or Enter is A, X is B.\n"
-                "      F1 restart, F3 overlay, F4 screenshot, 1/2/4/8 scale, Esc quit.\n",
+                "      F1 restart, F3 overlay, F4 screenshot, 1/2/4/8 scale, Esc quit.\n"
+                "      Hold A+B together to switch games.\n",
                 wumpo::core::versionString());
 }
 
@@ -175,7 +176,7 @@ bool writeReplay(const Replay& replay, const std::filesystem::path& path) {
     return file.good();
 }
 
-std::vector<std::string> overlayLines(const ShiftGame& game, int fps,
+std::vector<std::string> overlayLines(const GameHost& host, int fps,
                                       wumpo::input::ButtonMask buttons) {
     std::string input_text = "INPUT ";
     for (const auto button : wumpo::input::kAllButtonList) {
@@ -185,12 +186,17 @@ std::vector<std::string> overlayLines(const ShiftGame& game, int fps,
         }
     }
 
+    std::string state_text = "SELECT";
+    if (host.mode() == GameHost::Mode::Playing) {
+        state_text = host.gameOver() ? "OVER" : "PLAYING";
+    }
+
     return {
-        "FPS " + std::to_string(fps) + "  TICK " + std::to_string(game.tickCount()) + "  SEED " +
-            std::to_string(game.seed()),
-        std::string("STATE ") + (game.phase() == ShiftGame::Phase::Playing ? "PLAYING" : "OVER") +
-            "  SCORE " + std::to_string(game.score()) + "  BEST " +
-            std::to_string(game.highScore()),
+        "GAME " + std::string(wumpo::game::gameName(host.activeGame())) + "  FPS " +
+            std::to_string(fps) + "  TICK " + std::to_string(host.tickCount()) + "  SEED " +
+            std::to_string(host.seed()),
+        "STATE " + state_text + "  SCORE " + std::to_string(host.score()) + "  BEST " +
+            std::to_string(host.highScore(host.activeGame())),
         input_text,
     };
 }
@@ -256,8 +262,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "wumpo: save data unreadable, starting fresh\n");
     }
 
-    ShiftGame game(options.seed,
-                   static_cast<int>(save_data.highScore(wumpo::storage::GameId::Shift)));
+    GameHost host(options.seed, save_data);
     InputState input;
     Framebuffer frame;
     TickAccumulator accumulator;
@@ -288,7 +293,7 @@ int main(int argc, char** argv) {
         // recording or replaying rather than silently desyncing one from the
         // other.
         if (commands.restart && !recording && !replaying) {
-            game.reset(options.seed);
+            host.restartActive(options.seed);
             input.reset();
             accumulator.reset();
         }
@@ -321,7 +326,7 @@ int main(int argc, char** argv) {
                 replay_out.inputs.push_back(mask);
             }
 
-            const ShiftGame::Sound sound = game.tick(input);
+            const GameHost::Sound sound = host.tick(input);
             if (!sound.silent()) {
                 platform->audio().tone(sound.frequency_hz, sound.duration_ms);
             }
@@ -332,10 +337,10 @@ int main(int argc, char** argv) {
             }
         }
 
-        game.render(frame);
+        host.render(frame);
 
         if (options.debug_overlay) {
-            const auto lines = overlayLines(game, fps, input.downMask());
+            const auto lines = overlayLines(host, fps, input.downMask());
             platform->setOverlayLines(lines);
         }
 
@@ -343,7 +348,7 @@ int main(int argc, char** argv) {
 
         if (commands.screenshot) {
             const auto path = platform->dataDirectory() /
-                              ("screenshot-" + std::to_string(game.tickCount()) + ".pbm");
+                              ("screenshot-" + std::to_string(host.tickCount()) + ".pbm");
             if (writeFrame(frame, path)) {
                 std::printf("wrote %s\n", path.string().c_str());
             }
@@ -358,7 +363,7 @@ int main(int argc, char** argv) {
     }
 
     if (!options.screenshot.empty()) {
-        game.render(frame);
+        host.render(frame);
         if (!writeFrame(frame, options.screenshot)) {
             return 1;
         }
@@ -372,19 +377,32 @@ int main(int argc, char** argv) {
         std::printf("wrote %s\n", options.record_path.string().c_str());
     }
 
-    // Written once on exit, not every time the score changes: flash and EEPROM
-    // wear out, and this is the backend that has to live with that on hardware.
-    if (game.highScore() > static_cast<int>(save_data.highScore(wumpo::storage::GameId::Shift))) {
-        save_data.setHighScore(wumpo::storage::GameId::Shift,
-                               static_cast<std::uint32_t>(game.highScore()));
-        if (!wumpo::storage::store(platform->storage(), save_data)) {
-            std::fprintf(stderr, "wumpo: could not write save data\n");
+    // Written once on exit, not every tick or every switch: flash and EEPROM
+    // wear out, and this is the backend that has to live with that on
+    // hardware. A game switched away from earlier this session still needs
+    // its improved score persisted, so every slot is checked, not just the
+    // one active now.
+    bool save_changed = false;
+    const auto& high_scores = host.highScores();
+    for (std::size_t i = 0; i < wumpo::storage::kMaxGames; ++i) {
+        if (high_scores[i] > save_data.high_scores[i]) {
+            save_data.high_scores[i] = high_scores[i];
+            save_changed = true;
         }
     }
+    if (host.activeGame() != save_data.last_played) {
+        save_data.last_played = host.activeGame();
+        save_changed = true;
+    }
+    if (save_changed && !wumpo::storage::store(platform->storage(), save_data)) {
+        std::fprintf(stderr, "wumpo: could not write save data\n");
+    }
 
-    std::printf("wumpo %s | ticks %d | score %d | best %d | seed %llu | state %016llx\n",
-                wumpo::core::versionString(), game.tickCount(), game.score(), game.highScore(),
-                static_cast<unsigned long long>(game.seed()),
-                static_cast<unsigned long long>(game.stateHash()));
+    std::printf("wumpo %s | game %s | ticks %d | score %d | best %d | seed %llu | state %016llx\n",
+                wumpo::core::versionString(),
+                std::string(wumpo::game::gameName(host.activeGame())).c_str(), host.tickCount(),
+                host.score(), host.highScore(host.activeGame()),
+                static_cast<unsigned long long>(host.seed()),
+                static_cast<unsigned long long>(host.stateHash()));
     return 0;
 }

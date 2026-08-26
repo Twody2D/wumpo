@@ -1,9 +1,11 @@
 #include "core/fixed_string.hpp"
 #include "game/echo.hpp"
+#include "game/host.hpp"
 #include "game/shift.hpp"
 #include "input/button.hpp"
 #include "input/input_state.hpp"
 #include "renderer/framebuffer.hpp"
+#include "storage/save_data.hpp"
 
 #include <doctest.h>
 
@@ -78,6 +80,7 @@ void operator delete[](void* block, std::size_t size) noexcept {
 }
 
 using wumpo::game::EchoGame;
+using wumpo::game::GameHost;
 using wumpo::game::ShiftGame;
 using wumpo::input::Button;
 using wumpo::input::ButtonMask;
@@ -268,6 +271,44 @@ TEST_SUITE("alloc") {
             CHECK(AllocationGuard::count() == 0);
         }
         CHECK(game.phase() == EchoGame::Phase::Playing);
+    }
+
+    TEST_CASE("a whole session through GameHost allocates nothing, including a game switch") {
+        // The realistic device loop: poll, tick, render - now through the
+        // launcher, and including the one thing unique to it, opening the
+        // switcher and picking a different game.
+        GameHost host(12345, wumpo::storage::SaveData{});
+        InputState state;
+        Framebuffer frame;
+        const auto chord =
+            static_cast<ButtonMask>(input::maskOf(Button::A) | input::maskOf(Button::B));
+
+        {
+            const AllocationGuard guard;
+            for (int tick = 0; tick < GameHost::kSwitchHoldTicks; ++tick) {
+                state.update(chord);
+                (void)host.tick(state);
+                host.render(frame);
+            }
+            REQUIRE(host.mode() == GameHost::Mode::Selecting);
+
+            state.update(input::maskOf(Button::Down));
+            (void)host.tick(state);
+            host.render(frame);
+            state.update(0);
+            (void)host.tick(state);
+            state.update(input::maskOf(Button::A));
+            (void)host.tick(state);
+            host.render(frame);
+            REQUIRE(host.mode() == GameHost::Mode::Playing);
+
+            for (int tick = 0; tick < 600; ++tick) {
+                state.update(input::maskOf(Button::Right));
+                (void)host.tick(state);
+                host.render(frame);
+            }
+            CHECK(AllocationGuard::count() == 0);
+        }
     }
 
 } // TEST_SUITE
