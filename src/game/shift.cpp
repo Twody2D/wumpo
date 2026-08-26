@@ -76,7 +76,11 @@ void ShiftGame::beginShift() noexcept {
         gap_direction_ = -1;
     }
     gap_target_x_ = target;
-    slide_ticks_remaining_ = kShiftStep;
+    // No faster than the player's own top speed (one pixel every
+    // kMoveEveryTicks ticks): a slide the player cannot physically keep pace
+    // with, even reacting instantly, is not a puzzle to read - it is a coin
+    // flip decided before the player can respond.
+    slide_ticks_remaining_ = kShiftStep * ShiftGame::kMoveEveryTicks;
 }
 
 bool ShiftGame::playerClearsGap() const noexcept {
@@ -117,10 +121,10 @@ ShiftGame::Sound ShiftGame::tick(const input::InputState& input) {
         pulsed = true;
     }
     if (slide_ticks_remaining_ > 0) {
-        if (gap_x_ != gap_target_x_) {
+        --slide_ticks_remaining_;
+        if (slide_ticks_remaining_ % kMoveEveryTicks == 0 && gap_x_ != gap_target_x_) {
             gap_x_ += (gap_target_x_ > gap_x_) ? 1 : -1;
         }
-        --slide_ticks_remaining_;
     }
 
     if (--fall_countdown_ <= 0) {

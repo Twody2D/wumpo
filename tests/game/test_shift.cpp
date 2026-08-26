@@ -57,16 +57,6 @@ GapSpan findGap(const Framebuffer& frame, int row) {
     return gap;
 }
 
-/// Finds the player's left edge on its fixed row.
-int findPlayerX(const Framebuffer& frame) {
-    for (int x = 0; x < Framebuffer::kWidth; ++x) {
-        if (frame.pixel(x, ShiftGame::kPlayerRow)) {
-            return x;
-        }
-    }
-    return -1;
-}
-
 int gapClearTarget(const GapSpan& gap) {
     return gap.start + (gap.width - ShiftGame::kPlayerWidth) / 2;
 }
@@ -116,7 +106,15 @@ void holdUntilResolved(ShiftGame& game, InputState& state, int max_ticks) {
 /// way a player tracking the beat would, rather than aiming once at a
 /// precomputed spot: the gap drifts slowly enough that this always keeps up,
 /// regardless of how far a fall has left to go or where the player starts.
-void trackGapUntilResolved(ShiftGame& game, InputState& state, Framebuffer& frame, int max_ticks) {
+///
+/// `current_x` is tracked by mirroring `ShiftGame::tick`'s own quantised
+/// movement rule instead of being read back from the frame: for the one fall
+/// step where the two-row-tall wall reaches the player's row a tick before
+/// the collision check fires, the wall and the player are drawn on the same
+/// row, and scanning for "the lit span on the player's row" can find the
+/// wall's lit segment instead.
+void trackGapUntilResolved(ShiftGame& game, InputState& state, Framebuffer& frame, int& current_x,
+                           int max_ticks) {
     const int score_before = game.score();
     for (int i = 0;
          i < max_ticks && game.phase() == ShiftGame::Phase::Playing && game.score() == score_before;
@@ -124,16 +122,23 @@ void trackGapUntilResolved(ShiftGame& game, InputState& state, Framebuffer& fram
         game.render(frame);
         const auto gap = findGap(frame, game.wallRow());
         const int target = gapClearTarget(gap);
-        const int current = findPlayerX(frame);
 
         ButtonMask mask = 0;
-        if (current < target) {
+        if (current_x < target) {
             mask = input::maskOf(Button::Right);
-        } else if (current > target) {
+        } else if (current_x > target) {
             mask = input::maskOf(Button::Left);
         }
         state.update(mask);
         (void)game.tick(state);
+
+        if (game.tickCount() % ShiftGame::kMoveEveryTicks == 0) {
+            if (mask == input::maskOf(Button::Right)) {
+                current_x = std::min(current_x + 1, config::kScreenWidth - ShiftGame::kPlayerWidth);
+            } else if (mask == input::maskOf(Button::Left)) {
+                current_x = std::max(current_x - 1, 0);
+            }
+        }
     }
 }
 
@@ -223,11 +228,17 @@ TEST_SUITE("game") {
         ShiftGame game(7);
         InputState state;
         Framebuffer frame;
+        int current_x = (config::kScreenWidth - ShiftGame::kPlayerWidth) / 2;
 
+        // Twenty passes runs well past every difficulty step (every third
+        // point, floor reached at score 12): a speed mismatch between the
+        // gap's slide and the player's own top speed would show up as an
+        // unwinnable pass long before this, the way it did when the slide
+        // moved faster than the player physically could.
         int previous_duration = -1;
-        for (int pass = 0; pass < 5; ++pass) {
+        for (int pass = 0; pass < 20; ++pass) {
             const int ticks_before = game.tickCount();
-            trackGapUntilResolved(game, state, frame, 500);
+            trackGapUntilResolved(game, state, frame, current_x, 500);
             REQUIRE(game.phase() == ShiftGame::Phase::Playing);
             REQUIRE(game.score() == pass + 1);
 
@@ -239,8 +250,8 @@ TEST_SUITE("game") {
             }
             previous_duration = duration;
         }
-        CHECK(game.score() == 5);
-        CHECK(game.highScore() == 5);
+        CHECK(game.score() == 20);
+        CHECK(game.highScore() == 20);
     }
 
     TEST_CASE("missing the gap ends the run and does not score") {
