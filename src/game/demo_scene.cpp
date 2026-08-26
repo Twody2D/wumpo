@@ -90,6 +90,7 @@ DemoScene::Sound DemoScene::tick(const input::InputState& input) {
     Sound sound;
     if (touchingTarget()) {
         ++score_;
+        high_score_ = std::max(high_score_, score_);
         placeTarget();
         sound = kScoreSound;
     }

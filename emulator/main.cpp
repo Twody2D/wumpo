@@ -7,6 +7,7 @@
 #include "platform/desktop/desktop_platform.hpp"
 #include "renderer/framebuffer.hpp"
 #include "renderer/pbm.hpp"
+#include "storage/save_data.hpp"
 
 #include <charconv>
 #include <cstdio>
@@ -192,7 +193,8 @@ std::vector<std::string> overlayLines(const DemoScene& scene, int fps,
         "FPS " + std::to_string(fps) + "  TICK " + std::to_string(scene.tickCount()) + "  SEED " +
             std::to_string(scene.seed()),
         std::string("STATE ") + (scene.phase() == DemoScene::Phase::Playing ? "PLAYING" : "OVER") +
-            "  SCORE " + std::to_string(scene.score()),
+            "  SCORE " + std::to_string(scene.score()) + "  BEST " +
+            std::to_string(scene.highScore()),
         input_text,
     };
 }
@@ -248,7 +250,17 @@ int main(int argc, char** argv) {
     }
     platform->setOverlayVisible(options.debug_overlay);
 
-    DemoScene scene(options.seed);
+    wumpo::storage::SaveData save_data;
+    const auto load_result = wumpo::storage::load(platform->storage(), save_data);
+    if (load_result == wumpo::storage::LoadResult::BadMagic ||
+        load_result == wumpo::storage::LoadResult::BadChecksum ||
+        load_result == wumpo::storage::LoadResult::FutureVersion) {
+        // Anything other than a clean load starts fresh at a high score of
+        // zero: `save_data` was left untouched, so this is just its default.
+        std::fprintf(stderr, "wumpo: save data unreadable, starting fresh\n");
+    }
+
+    DemoScene scene(options.seed, static_cast<int>(save_data.high_score));
     InputState input;
     Framebuffer frame;
     TickAccumulator accumulator;
@@ -363,8 +375,17 @@ int main(int argc, char** argv) {
         std::printf("wrote %s\n", options.record_path.string().c_str());
     }
 
-    std::printf("wumpo %s | ticks %d | score %d | seed %llu | state %016llx\n",
-                wumpo::core::versionString(), scene.tickCount(), scene.score(),
+    // Written once on exit, not every time the score changes: flash and EEPROM
+    // wear out, and this is the backend that has to live with that on hardware.
+    if (scene.highScore() > static_cast<int>(save_data.high_score)) {
+        save_data.high_score = static_cast<std::uint32_t>(scene.highScore());
+        if (!wumpo::storage::store(platform->storage(), save_data)) {
+            std::fprintf(stderr, "wumpo: could not write save data\n");
+        }
+    }
+
+    std::printf("wumpo %s | ticks %d | score %d | best %d | seed %llu | state %016llx\n",
+                wumpo::core::versionString(), scene.tickCount(), scene.score(), scene.highScore(),
                 static_cast<unsigned long long>(scene.seed()),
                 static_cast<unsigned long long>(scene.stateHash()));
     return 0;
