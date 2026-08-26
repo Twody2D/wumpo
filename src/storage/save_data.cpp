@@ -11,11 +11,22 @@ namespace {
 /// firmware build.
 constexpr std::size_t kMagicOffset = 0;
 constexpr std::size_t kVersionOffset = 4;
-constexpr std::size_t kHighScoreOffset = 5; // 4 bytes, little endian
-constexpr std::size_t kSettingsOffset = 9;  // 1 byte
-constexpr std::size_t kPayloadEnd = 10;
+
+// Version 2 (current) layout.
+constexpr std::size_t kLastPlayedOffset = 5;
+constexpr std::size_t kHighScoresOffset = 6; // kMaxGames * 4 bytes, little endian
+constexpr std::size_t kSettingsOffset = kHighScoresOffset + (kMaxGames * 4); // 1 byte
+constexpr std::size_t kPayloadEnd = kSettingsOffset + 1;
 constexpr std::size_t kChecksumOffset = kPayloadEnd; // 2 bytes
 constexpr std::size_t kUsedBytes = kChecksumOffset + 2;
+
+// Version 1 (retired) layout, kept only so `deserialize()` can migrate an
+// old save instead of discarding it - the reason the format was versioned
+// from the first byte in the first place.
+constexpr std::size_t kV1HighScoreOffset = 5; // 4 bytes, little endian
+constexpr std::size_t kV1SettingsOffset = 9;  // 1 byte
+constexpr std::size_t kV1PayloadEnd = 10;
+constexpr std::size_t kV1ChecksumOffset = kV1PayloadEnd; // 2 bytes
 
 static_assert(kUsedBytes <= layout::kBlockSize, "save layout does not fit the storage block");
 
@@ -31,6 +42,11 @@ void writeUint32(std::span<std::uint8_t> out, std::size_t offset, std::uint32_t 
            (static_cast<std::uint32_t>(in[offset + 1]) << 8U) |
            (static_cast<std::uint32_t>(in[offset + 2]) << 16U) |
            (static_cast<std::uint32_t>(in[offset + 3]) << 24U);
+}
+
+[[nodiscard]] std::uint16_t readUint16(std::span<const std::uint8_t> in, std::size_t offset) {
+    return static_cast<std::uint16_t>(in[offset]) |
+           static_cast<std::uint16_t>(static_cast<std::uint16_t>(in[offset + 1]) << 8U);
 }
 
 } // namespace
@@ -55,7 +71,10 @@ void serialize(const SaveData& data, std::span<std::uint8_t> out) {
 
     std::ranges::copy(layout::kMagic, out.begin() + kMagicOffset);
     out[kVersionOffset] = layout::kVersion;
-    writeUint32(out, kHighScoreOffset, data.high_score);
+    out[kLastPlayedOffset] = static_cast<std::uint8_t>(data.last_played);
+    for (std::size_t i = 0; i < kMaxGames; ++i) {
+        writeUint32(out, kHighScoresOffset + (i * 4), data.high_scores[i]);
+    }
     out[kSettingsOffset] = data.settings;
 
     const std::uint16_t crc = checksum(out.subspan(0, kPayloadEnd));
@@ -80,22 +99,46 @@ LoadResult deserialize(std::span<const std::uint8_t> block, SaveData& data) {
         return LoadResult::BadMagic;
     }
 
-    const std::uint16_t stored_crc =
-        static_cast<std::uint16_t>(block[kChecksumOffset]) |
-        static_cast<std::uint16_t>(static_cast<std::uint16_t>(block[kChecksumOffset + 1]) << 8U);
-    if (stored_crc != checksum(block.subspan(0, kPayloadEnd))) {
-        return LoadResult::BadChecksum;
+    // The version decides which layout - and therefore which byte range - the
+    // checksum was computed over, so it must be read before the checksum can
+    // be checked at all.
+    const std::uint8_t version = block[kVersionOffset];
+
+    if (version == 1) {
+        const std::uint16_t stored_crc = readUint16(block, kV1ChecksumOffset);
+        if (stored_crc != checksum(block.subspan(0, kV1PayloadEnd))) {
+            return LoadResult::BadChecksum;
+        }
+        // Migrate: the one score version 1 knew about becomes Shift's score,
+        // since Shift was the only game version 1 could have been written by.
+        // This is the payoff of versioning the format from the first byte -
+        // an old save is upgraded, not discarded.
+        data.high_scores.fill(0);
+        data.high_scores[static_cast<std::size_t>(GameId::Shift)] =
+            readUint32(block, kV1HighScoreOffset);
+        data.last_played = GameId::Shift;
+        data.settings = block[kV1SettingsOffset];
+        return LoadResult::Loaded;
     }
 
-    // Checked after the checksum: a corrupt byte could otherwise masquerade as a
-    // version from the future and stop the player's real save being repaired.
-    if (block[kVersionOffset] > layout::kVersion) {
-        return LoadResult::FutureVersion;
+    if (version == layout::kVersion) {
+        const std::uint16_t stored_crc = readUint16(block, kChecksumOffset);
+        if (stored_crc != checksum(block.subspan(0, kPayloadEnd))) {
+            return LoadResult::BadChecksum;
+        }
+        // Checked after the checksum: a corrupt byte could otherwise
+        // masquerade as a game id we do not have.
+        data.last_played = static_cast<GameId>(block[kLastPlayedOffset]);
+        for (std::size_t i = 0; i < kMaxGames; ++i) {
+            data.high_scores[i] = readUint32(block, kHighScoresOffset + (i * 4));
+        }
+        data.settings = block[kSettingsOffset];
+        return LoadResult::Loaded;
     }
 
-    data.high_score = readUint32(block, kHighScoreOffset);
-    data.settings = block[kSettingsOffset];
-    return LoadResult::Loaded;
+    // Neither a version we ever wrote nor the current one: a newer build's
+    // layout we cannot know how to checksum, let alone parse.
+    return LoadResult::FutureVersion;
 }
 
 LoadResult load(platform::Storage& storage, SaveData& data) {

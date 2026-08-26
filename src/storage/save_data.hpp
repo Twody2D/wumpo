@@ -9,13 +9,36 @@
 
 namespace wumpo::storage {
 
+/// Identifies one of the device's games in save data. Append-only: the
+/// numeric value is written to disk, so reordering or reusing one would
+/// corrupt every existing save's high scores and last-played game - the same
+/// discipline as `input::Button`.
+///
+/// See docs/decisions/ADR-008-multi-game-launcher.md.
+enum class GameId : std::uint8_t {
+    Shift = 0,
+    Echo = 1,
+};
+
+/// How many game slots the save format reserves, regardless of how many games
+/// actually exist yet. Fixed and generous from the first version that has more
+/// than one game, so adding a game never again needs a new save format
+/// version - only a new `GameId` value less than this.
+inline constexpr std::size_t kMaxGames = 16;
+
 /// Everything the device remembers between power cycles.
 ///
 /// Deliberately tiny and fixed-size. This is a few hundred bytes of EEPROM or
 /// flash, not a database, and every field here costs write endurance on real
 /// hardware.
 struct SaveData {
-    std::uint32_t high_score = 0;
+    /// One high score per game, indexed by `GameId`.
+    std::array<std::uint32_t, kMaxGames> high_scores{};
+
+    /// Which game to boot straight into next time, per ADR-008 - the launcher
+    /// only shows its game list when asked, never on every power-on.
+    GameId last_played = GameId::Shift;
+
     /// Bit flags: sound on/off and whatever settings appear later. One byte,
     /// because a settings struct that grows without thought is how a 256-byte
     /// budget disappears.
@@ -26,6 +49,14 @@ struct SaveData {
 
     [[nodiscard]] constexpr bool soundEnabled() const noexcept {
         return (settings & kSoundEnabled) != 0;
+    }
+
+    [[nodiscard]] constexpr std::uint32_t highScore(GameId game) const noexcept {
+        return high_scores[static_cast<std::size_t>(game)];
+    }
+
+    constexpr void setHighScore(GameId game, std::uint32_t value) noexcept {
+        high_scores[static_cast<std::size_t>(game)] = value;
     }
 
     [[nodiscard]] bool operator==(const SaveData&) const noexcept = default;
@@ -50,7 +81,11 @@ enum class LoadResult : std::uint8_t {
 /// battery pull is a normal event, not an exotic one.
 namespace layout {
 inline constexpr std::array<std::uint8_t, 4> kMagic = {'W', 'U', 'M', 'P'};
-inline constexpr std::uint8_t kVersion = 1;
+/// Version 1 stored a single high score for the one game that existed then.
+/// Version 2 added `high_scores`/`last_played` for multiple games; a version 1
+/// block is still read and migrated on load, never rejected - see
+/// `deserialize()`.
+inline constexpr std::uint8_t kVersion = 2;
 inline constexpr std::size_t kBlockSize = config::kStorageBytes;
 } // namespace layout
 

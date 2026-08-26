@@ -256,7 +256,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "wumpo: save data unreadable, starting fresh\n");
     }
 
-    ShiftGame game(options.seed, static_cast<int>(save_data.high_score));
+    ShiftGame game(options.seed,
+                   static_cast<int>(save_data.highScore(wumpo::storage::GameId::Shift)));
     InputState input;
     Framebuffer frame;
     TickAccumulator accumulator;
@@ -373,8 +374,9 @@ int main(int argc, char** argv) {
 
     // Written once on exit, not every time the score changes: flash and EEPROM
     // wear out, and this is the backend that has to live with that on hardware.
-    if (game.highScore() > static_cast<int>(save_data.high_score)) {
-        save_data.high_score = static_cast<std::uint32_t>(game.highScore());
+    if (game.highScore() > static_cast<int>(save_data.highScore(wumpo::storage::GameId::Shift))) {
+        save_data.setHighScore(wumpo::storage::GameId::Shift,
+                               static_cast<std::uint32_t>(game.highScore()));
         if (!wumpo::storage::store(platform->storage(), save_data)) {
             std::fprintf(stderr, "wumpo: could not write save data\n");
         }

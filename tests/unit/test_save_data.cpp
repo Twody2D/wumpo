@@ -7,15 +7,48 @@
 #include <cstdint>
 
 using wumpo::platform::headless::HeadlessPlatform;
+using wumpo::storage::GameId;
 using wumpo::storage::LoadResult;
 using wumpo::storage::SaveData;
 namespace storage = wumpo::storage;
+
+namespace {
+
+/// Builds a version 1 block by hand, in the layout that shipped before
+/// multiple games existed: magic, version, one 4-byte high score, one
+/// settings byte, a checksum over just those 10 bytes, zero padding. This is
+/// what an old save actually looks like on disk - `deserialize()` must still
+/// read it, not just the current version.
+std::array<std::uint8_t, storage::layout::kBlockSize> buildV1Block(std::uint32_t high_score,
+                                                                   std::uint8_t settings) {
+    std::array<std::uint8_t, storage::layout::kBlockSize> block{};
+    block[0] = 'W';
+    block[1] = 'U';
+    block[2] = 'M';
+    block[3] = 'P';
+    block[4] = 1; // version
+    block[5] = static_cast<std::uint8_t>(high_score & 0xFFU);
+    block[6] = static_cast<std::uint8_t>((high_score >> 8U) & 0xFFU);
+    block[7] = static_cast<std::uint8_t>((high_score >> 16U) & 0xFFU);
+    block[8] = static_cast<std::uint8_t>((high_score >> 24U) & 0xFFU);
+    block[9] = settings;
+
+    const std::uint16_t crc =
+        storage::checksum(std::span<const std::uint8_t>(block).subspan(0, 10));
+    block[10] = static_cast<std::uint8_t>(crc & 0xFFU);
+    block[11] = static_cast<std::uint8_t>((crc >> 8U) & 0xFFU);
+    return block;
+}
+
+} // namespace
 
 TEST_SUITE("storage") {
 
     TEST_CASE("a save survives a round trip") {
         HeadlessPlatform platform;
-        const SaveData written{.high_score = 1234, .settings = 0};
+        SaveData written;
+        written.setHighScore(GameId::Shift, 1234);
+        written.settings = 0;
 
         CHECK(storage::store(platform.storage(), written));
 
@@ -24,14 +57,51 @@ TEST_SUITE("storage") {
         CHECK(read == written);
     }
 
+    TEST_CASE("high scores round-trip per game, independently") {
+        HeadlessPlatform platform;
+        SaveData written;
+        written.setHighScore(GameId::Shift, 20);
+        written.setHighScore(GameId::Echo, 7);
+        written.last_played = GameId::Echo;
+        CHECK(storage::store(platform.storage(), written));
+
+        SaveData read;
+        CHECK(storage::load(platform.storage(), read) == LoadResult::Loaded);
+        CHECK(read.highScore(GameId::Shift) == 20);
+        CHECK(read.highScore(GameId::Echo) == 7);
+        CHECK(read.last_played == GameId::Echo);
+    }
+
+    TEST_CASE("a version 1 save is migrated, not discarded") {
+        // The whole reason the format was versioned from the first byte:
+        // reading an old save must not lose the player's progress.
+        const auto block = buildV1Block(500, 1);
+
+        SaveData data;
+        REQUIRE(storage::deserialize(block, data) == LoadResult::Loaded);
+        CHECK(data.highScore(GameId::Shift) == 500);
+        CHECK(data.highScore(GameId::Echo) == 0);
+        CHECK(data.last_played == GameId::Shift);
+        CHECK(data.settings == 1);
+    }
+
+    TEST_CASE("a version 1 save with a damaged checksum is still rejected") {
+        auto block = buildV1Block(500, 1);
+        block[5] = static_cast<std::uint8_t>(block[5] ^ 0x01);
+
+        SaveData data;
+        CHECK(storage::deserialize(block, data) == LoadResult::BadChecksum);
+    }
+
     TEST_CASE("a device that has never been written reports empty, not corrupt") {
         // What a brand new console looks like. Treating this as corruption would
         // show an error to every first-time player.
         HeadlessPlatform platform;
-        SaveData data{.high_score = 99, .settings = 0};
+        SaveData data;
+        data.setHighScore(GameId::Shift, 99);
         CHECK(storage::load(platform.storage(), data) == LoadResult::Empty);
         // A failed load must not have touched the caller's data.
-        CHECK(data.high_score == 99);
+        CHECK(data.highScore(GameId::Shift) == 99);
     }
 
     TEST_CASE("an erased device reads as empty whichever way it erases") {
@@ -62,19 +132,27 @@ TEST_SUITE("storage") {
     TEST_CASE("a single flipped bit is caught by the checksum") {
         // The realistic failure: a battery pulled mid-write, or flash decay.
         std::array<std::uint8_t, storage::layout::kBlockSize> block{};
-        storage::serialize(SaveData{.high_score = 4242, .settings = 1}, block);
+        SaveData written;
+        written.setHighScore(GameId::Shift, 4242);
+        written.settings = 1;
+        storage::serialize(written, block);
 
         SaveData data;
         REQUIRE(storage::deserialize(block, data) == LoadResult::Loaded);
 
-        block[5] = static_cast<std::uint8_t>(block[5] ^ 0x01);
+        block[6] = static_cast<std::uint8_t>(block[6] ^ 0x01);
         CHECK(storage::deserialize(block, data) == LoadResult::BadChecksum);
     }
 
     TEST_CASE("corrupting the checksum itself is also caught") {
         std::array<std::uint8_t, storage::layout::kBlockSize> block{};
-        storage::serialize(SaveData{.high_score = 7, .settings = 1}, block);
-        block[10] = static_cast<std::uint8_t>(block[10] ^ 0xFF);
+        SaveData written;
+        written.setHighScore(GameId::Shift, 7);
+        written.settings = 1;
+        storage::serialize(written, block);
+
+        const std::size_t checksum_offset = 71;
+        block[checksum_offset] = static_cast<std::uint8_t>(block[checksum_offset] ^ 0xFF);
 
         SaveData data;
         CHECK(storage::deserialize(block, data) == LoadResult::BadChecksum);
@@ -84,18 +162,25 @@ TEST_SUITE("storage") {
         // Someone runs an older build after a newer one. Reading the newer layout as
         // if it were this one would silently corrupt their progress.
         std::array<std::uint8_t, storage::layout::kBlockSize> block{};
-        storage::serialize(SaveData{.high_score = 500, .settings = 1}, block);
+        SaveData written;
+        written.setHighScore(GameId::Shift, 500);
+        written.settings = 1;
+        storage::serialize(written, block);
 
-        block[4] = storage::layout::kVersion + 1;
+        const std::size_t version_offset = 4;
+        const std::size_t payload_end = 71;
+        const std::size_t checksum_offset = payload_end;
+        block[version_offset] = storage::layout::kVersion + 1;
         // Recompute the checksum so the block is valid, just newer.
         const std::uint16_t crc =
-            storage::checksum(std::span<const std::uint8_t>(block).subspan(0, 10));
-        block[10] = static_cast<std::uint8_t>(crc & 0xFFU);
-        block[11] = static_cast<std::uint8_t>((crc >> 8U) & 0xFFU);
+            storage::checksum(std::span<const std::uint8_t>(block).subspan(0, payload_end));
+        block[checksum_offset] = static_cast<std::uint8_t>(crc & 0xFFU);
+        block[checksum_offset + 1] = static_cast<std::uint8_t>((crc >> 8U) & 0xFFU);
 
-        SaveData data{.high_score = 1, .settings = 0};
+        SaveData data;
+        data.setHighScore(GameId::Shift, 1);
         CHECK(storage::deserialize(block, data) == LoadResult::FutureVersion);
-        CHECK(data.high_score == 1); // untouched
+        CHECK(data.highScore(GameId::Shift) == 1); // untouched
     }
 
     TEST_CASE("the serialized block is exactly the storage size") {
@@ -103,17 +188,19 @@ TEST_SUITE("storage") {
         block.fill(0xAB);
         storage::serialize(SaveData{}, block);
 
-        // Everything past the payload must be zeroed, not left as whatever was in
-        // the buffer: leftovers would leak into the checksum-free tail and make two
-        // identical saves compare differently on device.
-        for (std::size_t i = 12; i < block.size(); ++i) {
+        // Everything past the payload and its checksum must be zeroed, not
+        // left as whatever was in the buffer: leftovers would leak into the
+        // checksum-free tail and make two identical saves compare differently
+        // on device.
+        for (std::size_t i = 73; i < block.size(); ++i) {
             CHECK(block[i] == 0);
         }
     }
 
     TEST_CASE("settings round-trip as flags") {
         HeadlessPlatform platform;
-        SaveData quiet{.high_score = 0, .settings = 0};
+        SaveData quiet;
+        quiet.settings = 0;
         CHECK_FALSE(quiet.soundEnabled());
         CHECK(storage::store(platform.storage(), quiet));
 
@@ -128,13 +215,19 @@ TEST_SUITE("storage") {
         // Flash and EEPROM wear out. A game that saves every tick would pass every
         // other test and destroy a device in a week.
         HeadlessPlatform platform;
-        CHECK(storage::store(platform.storage(), SaveData{.high_score = 1, .settings = 1}));
-        CHECK(storage::store(platform.storage(), SaveData{.high_score = 2, .settings = 1}));
+        SaveData first;
+        first.setHighScore(GameId::Shift, 1);
+        first.settings = 1;
+        SaveData second;
+        second.setHighScore(GameId::Shift, 2);
+        second.settings = 1;
+        CHECK(storage::store(platform.storage(), first));
+        CHECK(storage::store(platform.storage(), second));
         CHECK(platform.memoryStorage().writeCount() == 2);
 
         SaveData read;
         CHECK(storage::load(platform.storage(), read) == LoadResult::Loaded);
-        CHECK(read.high_score == 2);
+        CHECK(read.highScore(GameId::Shift) == 2);
     }
 
     TEST_CASE("the checksum matches a known CRC-16/CCITT-FALSE value") {
