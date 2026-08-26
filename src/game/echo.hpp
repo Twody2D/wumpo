@@ -126,6 +126,12 @@ private:
     int high_score_ = 0;
     int ticks_ = 0;
     Phase phase_ = Phase::Playing;
+
+    // True from the first ping of this run onward. Until then, render() shows
+    // a hint in the playfield - the whole mechanic is invisible until you
+    // press A once, so the darkness itself must not be the first thing a new
+    // player is left alone with.
+    bool has_pinged_ = false;
 };
 
 } // namespace wumpo::game

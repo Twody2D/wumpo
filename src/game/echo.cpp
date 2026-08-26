@@ -15,6 +15,10 @@ using input::Button;
 constexpr int kBarRow = 0;
 constexpr int kScoreRow = 1;
 constexpr int kRuleRow = EchoGame::kPlayfieldTop - 1;
+/// Where the "press A" hint sits before the first ping of a run - clear of
+/// both the player's row near the bottom and the wall's opening position near
+/// the top, so it never collides with either.
+constexpr int kHintRow = 17;
 
 constexpr int kInitialGapWidth = 14;
 constexpr int kMinGapWidth = 8;
@@ -59,6 +63,7 @@ void EchoGame::reset(std::uint64_t seed) {
     fall_every_ticks_ = kInitialFallEveryTicks;
     ping_visible_remaining_ = 0;
     ping_cooldown_remaining_ = 0;
+    has_pinged_ = false;
 
     score_ = 0;
     ticks_ = 0;
@@ -129,6 +134,7 @@ EchoGame::Sound EchoGame::tick(const input::InputState& input) {
         ping_visible_remaining_ = kPingDurationTicks;
         ping_cooldown_remaining_ = kPingCooldownTicks;
         pinged = true;
+        has_pinged_ = true;
     }
 
     if (--fall_countdown_ <= 0) {
@@ -201,6 +207,14 @@ void EchoGame::render(renderer::Framebuffer& frame) const {
         }
     }
 
+    // Until the player has pinged even once this run, the mechanic itself is
+    // invisible - so say it, once, in the dark the hint is explaining.
+    // Disappears the instant A is first pressed and never comes back this run.
+    if (!has_pinged_) {
+        const int hint_x = (config::kScreenWidth - renderer::font::textWidth("A=PING")) / 2;
+        renderer::drawText(frame, hint_x, kHintRow, "A=PING");
+    }
+
     // The player's own marker is always visible - a game about darkness is
     // not a game about not knowing where you are.
     frame.fillRect(player_x_, kPlayerRow, kPlayerWidth, kPlayerHeight, true);
@@ -225,6 +239,7 @@ std::uint64_t EchoGame::stateHash() const noexcept {
     mix(static_cast<std::uint64_t>(fall_countdown_));
     mix(static_cast<std::uint64_t>(ping_visible_remaining_));
     mix(static_cast<std::uint64_t>(ping_cooldown_remaining_));
+    mix(static_cast<std::uint64_t>(has_pinged_));
     mix(static_cast<std::uint64_t>(score_));
     mix(static_cast<std::uint64_t>(ticks_));
     mix(static_cast<std::uint64_t>(phase_));

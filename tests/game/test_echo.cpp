@@ -58,6 +58,15 @@ GapSpan findGap(const Framebuffer& frame, int row) {
     return gap;
 }
 
+bool rowHasLitPixel(const Framebuffer& frame, int row) {
+    for (int x = 0; x < Framebuffer::kWidth; ++x) {
+        if (frame.pixel(x, row)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int gapClearTarget(const GapSpan& gap) {
     return gap.start + (gap.width - EchoGame::kPlayerWidth) / 2;
 }
@@ -274,6 +283,32 @@ TEST_SUITE("game") {
             CHECK(game.phase() == EchoGame::Phase::Over);
             CHECK(game.score() == 0);
         }
+    }
+
+    TEST_CASE("the press-A hint shows before the first ping of a run and never after") {
+        // Mirrors echo.cpp's kHintRow: clear of both the player's row and the
+        // wall's opening position, so nothing else could light it up instead.
+        constexpr int kHintRow = 17;
+
+        EchoGame game(1);
+        Framebuffer frame;
+        game.render(frame);
+        CHECK(rowHasLitPixel(frame, kHintRow));
+
+        InputState state;
+        state.update(input::maskOf(Button::A));
+        (void)game.tick(state);
+        game.render(frame);
+        CHECK_FALSE(rowHasLitPixel(frame, kHintRow));
+
+        // Stays gone even once the ping itself has faded back to darkness.
+        const int visible_ticks = game.pingVisibleTicks();
+        for (int i = 0; i < visible_ticks + 1; ++i) {
+            state.update(0);
+            (void)game.tick(state);
+        }
+        game.render(frame);
+        CHECK_FALSE(rowHasLitPixel(frame, kHintRow));
     }
 
     TEST_CASE("a ping cannot be re-triggered before its cooldown clears") {
