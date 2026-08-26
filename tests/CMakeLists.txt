@@ -18,6 +18,7 @@ add_executable(wumpo_tests
     unit/test_save_data.cpp
     unit/test_allocations.cpp
     game/test_demo_scene.cpp
+    game/test_shift.cpp
     integration/test_replay.cpp
 )
 

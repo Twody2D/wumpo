@@ -15,6 +15,7 @@ add_library(wumpo_core STATIC
     renderer/font.cpp
     renderer/pbm.cpp
     game/demo_scene.cpp
+    game/shift.cpp
     storage/save_data.cpp
 )
 

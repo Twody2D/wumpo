@@ -1,5 +1,6 @@
 #include "core/fixed_string.hpp"
 #include "game/demo_scene.hpp"
+#include "game/shift.hpp"
 #include "input/button.hpp"
 #include "input/input_state.hpp"
 #include "renderer/framebuffer.hpp"
@@ -77,6 +78,7 @@ void operator delete[](void* block, std::size_t size) noexcept {
 }
 
 using wumpo::game::DemoScene;
+using wumpo::game::ShiftGame;
 using wumpo::input::Button;
 using wumpo::input::ButtonMask;
 using wumpo::input::InputState;
@@ -201,6 +203,74 @@ TEST_SUITE("alloc") {
             }
             CHECK(AllocationGuard::count() == 0);
         }
+    }
+
+    TEST_CASE("ten thousand ticks of The Shift allocate nothing") {
+        ShiftGame game(12345);
+        InputState state;
+
+        {
+            const AllocationGuard guard;
+            for (int tick = 0; tick < 10'000; ++tick) {
+                ButtonMask mask = 0;
+                if (tick % 5 < 2) {
+                    mask = static_cast<ButtonMask>(mask | input::maskOf(Button::Right));
+                }
+                if (tick % 9 < 3) {
+                    mask = static_cast<ButtonMask>(mask | input::maskOf(Button::Left));
+                }
+                if (tick % 31 == 0) {
+                    mask = static_cast<ButtonMask>(mask | input::maskOf(Button::A));
+                }
+                state.update(mask);
+                (void)game.tick(state);
+            }
+            CHECK(AllocationGuard::count() == 0);
+        }
+    }
+
+    TEST_CASE("rendering allocates nothing, including The Shift's crash screen") {
+        ShiftGame game(12345);
+        Framebuffer frame;
+
+        {
+            const AllocationGuard guard;
+            game.render(frame);
+            CHECK(AllocationGuard::count() == 0);
+        }
+
+        // Held hard left for longer than a wall takes to fall; seed 12345's
+        // first gap sits away from the left edge, so this always crashes.
+        InputState state;
+        for (int tick = 0; tick < 200 && game.phase() == ShiftGame::Phase::Playing; ++tick) {
+            state.update(input::maskOf(Button::Left));
+            (void)game.tick(state);
+        }
+        REQUIRE(game.phase() == ShiftGame::Phase::Over);
+
+        {
+            const AllocationGuard guard;
+            game.render(frame);
+            CHECK(AllocationGuard::count() == 0);
+        }
+    }
+
+    TEST_CASE("a restart allocates nothing in The Shift") {
+        ShiftGame game(12345);
+        InputState state;
+        for (int tick = 0; tick < 200 && game.phase() == ShiftGame::Phase::Playing; ++tick) {
+            state.update(input::maskOf(Button::Left));
+            (void)game.tick(state);
+        }
+        REQUIRE(game.phase() == ShiftGame::Phase::Over);
+
+        {
+            const AllocationGuard guard;
+            state.update(input::maskOf(Button::A));
+            (void)game.tick(state);
+            CHECK(AllocationGuard::count() == 0);
+        }
+        CHECK(game.phase() == ShiftGame::Phase::Playing);
     }
 
 } // TEST_SUITE
